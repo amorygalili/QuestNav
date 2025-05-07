@@ -9,6 +9,13 @@
       </intent-filter>
       <meta-data android:name="com.oculus.vr.focusaware" android:value="true" />
     </activity>
+    <!-- Broadcast Receiver for auto-starting on boot -->
+    <receiver android:name="com.unity3d.player.BootReceiver" android:enabled="true" android:exported="true" android:permission="android.permission.RECEIVE_BOOT_COMPLETED">
+      <intent-filter>
+        <action android:name="android.intent.action.BOOT_COMPLETED" />
+        <category android:name="android.intent.category.DEFAULT" />
+      </intent-filter>
+    </receiver>
     <meta-data android:name="unityplayer.SkipPermissionsDialog" android:value="false" />
     <meta-data android:name="com.samsung.android.vr.application.mode" android:value="vr_only" />
     <meta-data android:name="com.oculus.handtracking.frequency" android:value="LOW" />
@@ -26,4 +33,6 @@
   <uses-feature android:name="com.oculus.feature.RENDER_MODEL" />
   <uses-permission android:name="com.oculus.permission.RENDER_MODEL" />
   <uses-permission android:name="com.oculus.permission.USE_SCENE" />
+  <!-- Permission for auto-starting on boot -->
+  <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
 </manifest>
