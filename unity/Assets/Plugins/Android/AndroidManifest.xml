@@ -1,6 +1,6 @@
 ﻿<?xml version="1.0" encoding="utf-8" standalone="no"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android" xmlns:tools="http://schemas.android.com/tools" android:installLocation="auto">
-  <application android:label="@string/app_name" android:icon="@mipmap/app_icon" android:allowBackup="false">
+  <application android:name="com.unity3d.player.QuestNavApplication" android:label="@string/app_name" android:icon="@mipmap/app_icon" android:allowBackup="false">
     <activity android:theme="@style/Theme.AppCompat.DayNight.NoActionBar" android:configChanges="locale|fontScale|keyboard|keyboardHidden|mcc|mnc|navigation|orientation|screenLayout|screenSize|smallestScreenSize|touchscreen|uiMode" android:launchMode="singleTask" android:name="com.unity3d.player.UnityPlayerGameActivity" android:excludeFromRecents="true" android:exported="true">
       <intent-filter>
         <action android:name="android.intent.action.MAIN" />
@@ -9,10 +9,14 @@
       </intent-filter>
       <meta-data android:name="com.oculus.vr.focusaware" android:value="true" />
     </activity>
-    <!-- Broadcast Receiver for auto-starting on boot -->
+    <!-- Broadcast Receiver for auto-starting on boot and handling app restarts -->
     <receiver android:name="com.unity3d.player.BootReceiver" android:enabled="true" android:exported="true" android:permission="android.permission.RECEIVE_BOOT_COMPLETED">
       <intent-filter>
         <action android:name="android.intent.action.BOOT_COMPLETED" />
+        <category android:name="android.intent.category.DEFAULT" />
+      </intent-filter>
+      <intent-filter>
+        <action android:name="com.unity3d.player.ACTION_RESTART_APP" />
         <category android:name="android.intent.category.DEFAULT" />
       </intent-filter>
     </receiver>
@@ -35,4 +39,6 @@
   <uses-permission android:name="com.oculus.permission.USE_SCENE" />
   <!-- Permission for auto-starting on boot -->
   <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+  <!-- Permission for scheduling alarms (used for app restart) -->
+  <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
 </manifest>
