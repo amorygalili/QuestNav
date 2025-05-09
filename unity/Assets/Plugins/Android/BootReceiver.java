@@ -18,11 +18,11 @@ public class BootReceiver extends BroadcastReceiver {
         String action = intent.getAction();
 
         if (Intent.ACTION_BOOT_COMPLETED.equals(action)) {
-            Log.d(TAG, "Boot completed, starting QuestNav application");
+            Log.d(TAG, "[QuestNav] Boot completed, starting QuestNav application");
             launchApp(context);
         }
         else if (ACTION_RESTART_APP.equals(action)) {
-            Log.d(TAG, "Received restart request, restarting QuestNav application");
+            Log.d(TAG, "[QuestNav] Received restart request, restarting QuestNav application");
             launchApp(context);
         }
     }
@@ -36,9 +36,9 @@ public class BootReceiver extends BroadcastReceiver {
             Intent launchIntent = new Intent(context, UnityPlayerGameActivity.class);
             launchIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
             context.startActivity(launchIntent);
-            Log.d(TAG, "QuestNav application started successfully");
+            Log.d(TAG, "[QuestNav] Application started successfully");
         } catch (Exception e) {
-            Log.e(TAG, "Error starting QuestNav application", e);
+            Log.e(TAG, "[QuestNav] Error starting application", e);
         }
     }
 }

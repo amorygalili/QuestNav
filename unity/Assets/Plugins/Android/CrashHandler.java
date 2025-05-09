@@ -36,7 +36,7 @@ public class CrashHandler implements Thread.UncaughtExceptionHandler {
      */
     public static void init(Application application) {
         Thread.setDefaultUncaughtExceptionHandler(new CrashHandler(application));
-        Log.d(TAG, "CrashHandler initialized");
+        Log.d(TAG, "[QuestNav] CrashHandler initialized");
     }
 
     private CrashHandler(Application application) {
@@ -46,7 +46,7 @@ public class CrashHandler implements Thread.UncaughtExceptionHandler {
 
     @Override
     public void uncaughtException(Thread thread, Throwable throwable) {
-        Log.e(TAG, "Uncaught exception detected, preparing for app restart", throwable);
+        Log.e(TAG, "[QuestNav] Uncaught exception detected, preparing for app restart", throwable);
 
         try {
             // Schedule app restart with crash loop protection
@@ -55,7 +55,7 @@ public class CrashHandler implements Thread.UncaughtExceptionHandler {
             // Wait to ensure the restart intent is scheduled
             Thread.sleep(200);
         } catch (Exception e) {
-            Log.e(TAG, "Error while handling crash", e);
+            Log.e(TAG, "[QuestNav] Error while handling crash", e);
         }
 
         // Pass the exception to the default handler
@@ -103,7 +103,7 @@ public class CrashHandler implements Thread.UncaughtExceptionHandler {
                 delayMs = Math.min(delayMs, MAX_RESTART_DELAY_MS);
             }
 
-            Log.d(TAG, "Crash count: " + crashCount + ", scheduling restart with " + delayMs + "ms delay");
+            Log.d(TAG, "[QuestNav] Crash count: " + crashCount + ", scheduling restart with " + delayMs + "ms delay");
 
             // Create an intent to broadcast to our BootReceiver
             Intent intent = new Intent(application, BootReceiver.class);
@@ -131,12 +131,12 @@ public class CrashHandler implements Thread.UncaughtExceptionHandler {
             AlarmManager alarmManager = (AlarmManager) application.getSystemService(Context.ALARM_SERVICE);
             if (alarmManager != null) {
                 alarmManager.set(AlarmManager.RTC, System.currentTimeMillis() + delayMs, pendingIntent);
-                Log.d(TAG, "App restart scheduled in " + delayMs + "ms");
+                Log.d(TAG, "[QuestNav] App restart scheduled in " + delayMs + "ms");
             } else {
-                Log.e(TAG, "AlarmManager service not available");
+                Log.e(TAG, "[QuestNav] AlarmManager service not available");
             }
         } catch (Exception e) {
-            Log.e(TAG, "Failed to schedule app restart", e);
+            Log.e(TAG, "[QuestNav] Failed to schedule app restart", e);
         }
     }
 }

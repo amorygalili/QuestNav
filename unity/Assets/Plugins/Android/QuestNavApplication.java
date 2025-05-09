@@ -8,12 +8,12 @@ import android.util.Log;
  */
 public class QuestNavApplication extends Application {
     private static final String TAG = "QuestNav_Application";
-    
+
     @Override
     public void onCreate() {
         super.onCreate();
-        Log.d(TAG, "QuestNavApplication onCreate");
-        
+        Log.d(TAG, "[QuestNav] QuestNavApplication onCreate");
+
         // Initialize the crash handler
         CrashHandler.init(this);
     }
