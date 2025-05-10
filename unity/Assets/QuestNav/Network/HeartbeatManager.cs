@@ -86,21 +86,31 @@ namespace QuestNav.Network
         {
             // Only run if connected
             if (networkConnection == null || !networkConnection.IsConnected) return;
-            
+
             float currentTime = Time.time;
-            
+
             // Check if previous heartbeat timed out
             if (heartbeatResponsePending)
             {
-                if (currentTime - lastHeartbeatSentTime > QuestNavConstants.Heartbeat.HEARTBEAT_TIMEOUT)
+                // Use a longer timeout when app is in background (not focused)
+                float timeoutDuration = Application.isFocused
+                    ? QuestNavConstants.Heartbeat.HEARTBEAT_TIMEOUT
+                    : QuestNavConstants.Heartbeat.HEARTBEAT_TIMEOUT * 2;
+
+                if (currentTime - lastHeartbeatSentTime > timeoutDuration)
                 {
                     // Heartbeat timed out - increment failure counter
                     consecutiveFailedHeartbeats++;
                     heartbeatResponsePending = false;
                     QueuedLogger.LogWarning($"[QuestNav] Heartbeat #{heartbeatCounter} timed out. Failed count: {consecutiveFailedHeartbeats}");
-                    
+
                     // Force reconnection if too many consecutive failures
-                    if (consecutiveFailedHeartbeats >= QuestNavConstants.Heartbeat.MAX_FAILED_HEARTBEATS)
+                    // Use a higher threshold when app is in background
+                    int maxFailures = Application.isFocused
+                        ? QuestNavConstants.Heartbeat.MAX_FAILED_HEARTBEATS
+                        : QuestNavConstants.Heartbeat.MAX_FAILED_HEARTBEATS * 2;
+
+                    if (consecutiveFailedHeartbeats >= maxFailures)
                     {
                         QueuedLogger.LogWarning("[QuestNav] Too many failed heartbeats, forcing reconnection");
                         networkConnection.ForceReconnection();
@@ -113,9 +123,14 @@ namespace QuestNav.Network
                     CheckHeartbeatResponse();
                 }
             }
-            
+
             // Send new heartbeat if interval elapsed and not waiting for response
-            if (!heartbeatResponsePending && currentTime - lastHeartbeatSentTime > QuestNavConstants.Heartbeat.HEARTBEAT_INTERVAL)
+            // Use a longer interval when app is in background
+            float heartbeatInterval = Application.isFocused
+                ? QuestNavConstants.Heartbeat.HEARTBEAT_INTERVAL
+                : QuestNavConstants.Heartbeat.HEARTBEAT_INTERVAL * 2;
+
+            if (!heartbeatResponsePending && currentTime - lastHeartbeatSentTime > heartbeatInterval)
             {
                 SendHeartbeat();
             }
@@ -161,7 +176,7 @@ namespace QuestNav.Network
             try
             {
                 double response = networkConnection.GetDouble(QuestNavConstants.Topics.HEARTBEAT_FROM_ROBOT);
-                
+
                 if ((int)response == heartbeatCounter)
                 {
                     // Valid response received
@@ -169,7 +184,7 @@ namespace QuestNav.Network
                     lastHeartbeatResponseTime = Time.time;
                     consecutiveFailedHeartbeats = 0;
                     QueuedLogger.Log($"[QuestNav] Received heartbeat response #{heartbeatCounter}");
-                    
+
                     // Increment heartbeat counter for next round (with overflow protection)
                     heartbeatCounter++;
                     if (heartbeatCounter > 1000000) heartbeatCounter = 1;
