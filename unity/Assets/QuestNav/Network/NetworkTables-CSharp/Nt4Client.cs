@@ -31,11 +31,11 @@ namespace QuestNav.Network.NetworkTables_CSharp
             {"float[]", 19},
             {"string[]", 20},
         };
-        
+
         private readonly string _appName;
         private readonly string _serverAddress;
-        
-        
+
+
         private WebSocket _ws;
         private long? _serverTimeOffsetUs;
         private long _networkLatencyUs;
@@ -61,6 +61,7 @@ namespace QuestNav.Network.NetworkTables_CSharp
             _appName = appName;
             _onNewTopicData = onNewTopicData;
             _onOpen = onOpen;
+            Debug.Log($"[NT4] Created client with server address: {_serverAddress}");
         }
 
         /// <summary>
@@ -72,24 +73,32 @@ namespace QuestNav.Network.NetworkTables_CSharp
             {
                 if (_ws != null && (_ws.ReadyState == WebSocketState.Open || _ws.ReadyState == WebSocketState.Connecting))
                 {
+                    Debug.Log($"[NT4] Already connected or connecting to {_serverAddress}");
                     return (true, null); // Already connected or connecting
                 }
 
+                Debug.Log($"[NT4] Attempting to connect to {_serverAddress}");
                 _ws = new WebSocket(_serverAddress);
                 _ws.OnOpen += OnOpen;
                 _ws.OnMessage += OnMessage;
                 _ws.OnError += OnError;
                 _ws.OnClose += OnClose;
 
+                // Set connection timeout
+                _ws.WaitTime = TimeSpan.FromSeconds(5);
+
+                Debug.Log($"[NT4] Calling WebSocket.Connect() for {_serverAddress}");
                 _ws.Connect();
+                Debug.Log($"[NT4] WebSocket.Connect() called successfully for {_serverAddress}");
                 return (true, null);
             }
             catch (Exception ex)
             {
+                Debug.LogError($"[NT4] Connection error to {_serverAddress}: {ex.Message}\nStack trace: {ex.StackTrace}");
                 return (false, ex.Message);
             }
         }
-        
+
         /// <summary>
         /// Disconnect from the NetworkTables server.
         /// </summary>
@@ -100,14 +109,14 @@ namespace QuestNav.Network.NetworkTables_CSharp
                 _ws.Close();
             }
         }
-        
+
         // Event handlers
         private void OnOpen(object sender, EventArgs e)
         {
             Debug.Log("[NT4] Connected with identity " + _appName);
             WsSendTimestamp();
-            
-            
+
+
         }
 
         private void OnMessage(object message, MessageEventArgs args)
@@ -146,17 +155,22 @@ namespace QuestNav.Network.NetworkTables_CSharp
                 HandleMsgPackMessage(msg);
             }
         }
-        
+
         private void OnError(object sender, ErrorEventArgs e)
         {
-            Debug.LogError("[NT4] Error: " + e.Message + " " + e.Exception);
+            Debug.LogError($"[NT4] WebSocket error for {_serverAddress}: {e.Message}");
+            if (e.Exception != null)
+            {
+                Debug.LogError($"[NT4] Exception details: {e.Exception.Message}");
+                Debug.LogError($"[NT4] Stack trace: {e.Exception.StackTrace}");
+            }
         }
-        
+
         private void OnClose(object sender, CloseEventArgs e)
         {
-            Debug.Log("[NT4] Disconnected: " + e.Reason);
+            Debug.Log($"[NT4] WebSocket disconnected from {_serverAddress}. Code: {e.Code}, Reason: {e.Reason}, WasClean: {e.WasClean}");
         }
-        
+
         /// <summary>
         /// Publish a topic to the server.
         /// </summary>
@@ -169,7 +183,7 @@ namespace QuestNav.Network.NetworkTables_CSharp
             _publishedTopics.Add(key, topic);
             WsPublishTopic(topic);
         }
-        
+
         /// <summary>
         /// Publish a topic to the server.
         /// </summary>
@@ -237,7 +251,7 @@ namespace QuestNav.Network.NetworkTables_CSharp
             _subscriptions.Add(sub.Uid, sub);
             return sub.Uid;
         }
-        
+
         /// <summary>
         /// Subscribe to a topic from the server.
         /// </summary>
@@ -252,7 +266,7 @@ namespace QuestNav.Network.NetworkTables_CSharp
             _subscriptions.Add(sub.Uid, sub);
             return sub.Uid;
         }
-        
+
         /// <summary>
         /// Subscribe to a topic from the server.
         /// </summary>
@@ -288,7 +302,7 @@ namespace QuestNav.Network.NetworkTables_CSharp
             _subscriptions.Remove(uid);
             WsUnsubscribe(sub);
         }
-        
+
         // ws utility functions
         private void WsSendJson(string method, Dictionary<string, object> paramsObj)
         {
@@ -301,7 +315,7 @@ namespace QuestNav.Network.NetworkTables_CSharp
             // convert msg to a json array, not object, containing only msg
             _ws.SendAsync(JsonConvert.SerializeObject(new object[] {msg}), null);
         }
-        
+
 void WsSendBinary(byte[] data)
         {
             if (!Connected())
@@ -316,7 +330,7 @@ void WsSendBinary(byte[] data)
         {
             WsSendJson("publish", topic.ToPublishObj());
         }
-        
+
         private void WsUnpublishTopic(Nt4Topic topic)
         {
             WsSendJson("unpublish", topic.ToUnpublishObj());
@@ -326,19 +340,19 @@ void WsSendBinary(byte[] data)
         {
             WsSendJson("subscribe", subscription.ToSubscribeObj());
         }
-        
+
         private void WsUnsubscribe(Nt4Subscription subscription)
         {
             WsSendJson("unsubscribe", subscription.ToUnsubscribeObj());
         }
-        
+
         private void WsSendTimestamp()
         {
             long timestamp = GetClientTimeUs();
             // Send the timestamp (convert using MessagePack) in the format: -1, 0, type, timestamp
             WsSendBinary(MessagePackSerializer.Serialize(new object[] {-1, 0, TypeStrIdxLookup["int"], timestamp}));
         }
-        
+
         private void WsHandleReceiveTimestamp(long serverTimestamp, long clientTimestamp) {
             long rxTime = GetClientTimeUs();
 
@@ -356,7 +370,7 @@ void WsSendBinary(byte[] data)
                 "ms latency"
             );
         }
-        
+
         // General Utility
         private static long GetClientTimeUs()
         {
@@ -364,7 +378,7 @@ void WsSendBinary(byte[] data)
             // Convert to us
             return timestamp * 1000;
         }
-        
+
         private long? GetServerTimeUs() {
             if (_serverTimeOffsetUs == null) return null;
             return GetClientTimeUs() + _serverTimeOffsetUs;
@@ -389,7 +403,7 @@ void WsSendBinary(byte[] data)
             int topicId = Convert.ToInt32(msg[0]);
             long timestampUs = Convert.ToInt64(msg[1]);
             object value = msg[3];
-            
+
             if (topicId >= 0)
             {
                 Nt4Topic topic = null;
@@ -413,7 +427,7 @@ void WsSendBinary(byte[] data)
         }
 
         private static int GetNewUid()
-        {   
+        {
             // Return a random int
             return new Random().Next(0, 10000000);
         }

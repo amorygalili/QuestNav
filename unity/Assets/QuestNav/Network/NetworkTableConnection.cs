@@ -66,7 +66,7 @@ namespace QuestNav.Network
         /// <param name="batteryPercent">Current battery percentage</param>
         void PublishDeviceData(bool currentlyTracking, int trackingLostEvents, float batteryPercent);
 
-        
+
         /// <summary>
         /// Publishes a value to NetworkTables.
         /// </summary>
@@ -179,7 +179,7 @@ namespace QuestNav.Network
         /// Timestamp when the connection attempt started for timeout calculation
         /// </summary>
         private float connectionAttemptStartTime = 0;
-        
+
         #endregion
         #endregion
 
@@ -221,13 +221,13 @@ namespace QuestNav.Network
         {
             // Prefix log messages for consistency
             string prefixedMessage = $"[NetworkTableConnection] {message}";
-            
+
             // Update state message if requested
             if (updateState)
             {
                 conStateMessage = message;
             }
-            
+
             // Log with appropriate level
             switch (level)
             {
@@ -242,7 +242,7 @@ namespace QuestNav.Network
                     break;
             }
         }
-        
+
         /// <summary>
         /// Helper method to safely disconnect and clean up connection
         /// </summary>
@@ -276,18 +276,18 @@ namespace QuestNav.Network
                 Log("Connection attempt already in progress, skipping new request", QueuedLogger.LogLevel.Warning, false);
                 return;
             }
-            
+
             // Set connection flags and timestamp for timeout tracking
             connectionAttempt = true;
             connectionAttemptCompleted = false;
             connectionAttemptStartTime = Time.time;
-            
+
             // Cancel any existing connection coroutine
             if (_connectionCoroutine != null)
             {
                 StopCoroutine(_connectionCoroutine);
             }
-            
+
             // Start a new connection attempt
             _connectionCoroutine = StartCoroutine(ConnectionCoroutineWrapper());
         }
@@ -299,12 +299,12 @@ namespace QuestNav.Network
         private IEnumerator ConnectionCoroutineWrapper()
         {
             var connectionTask = AttemptConnectionAsync();
-            
+
             while (!connectionTask.IsCompleted)
             {
                 yield return null;
             }
-            
+
             // Check if the task completed successfully
             if (connectionTask.IsFaulted)
             {
@@ -324,9 +324,9 @@ namespace QuestNav.Network
             bool connectionEstablished = false;
             List<string> candidateAddresses = new List<string>()
             {
-                // "127.0.0.1",
-                // "localhost",
-                "0.0.0.0"
+                "127.0.0.1",
+                "localhost",
+                // "0.0.0.0" // This is not a valid address to connect to
                 // generateIP(),
                 // "172.22.11.2",
                 // $"roboRIO-{teamNumber}-FRC.local",
@@ -341,7 +341,7 @@ namespace QuestNav.Network
                 {
                     Log($"Network not reachable. Waiting {QuestNavConstants.Network.UNREACHABLE_NETWORK_DELAY} seconds before reattempting.", QueuedLogger.LogLevel.Warning);
                     await Task.Delay(QuestNavConstants.Network.UNREACHABLE_NETWORK_DELAY * 1000);
-                    continue;
+                    // continue;
                 }
 
                 Log("Starting NT4 connection attempt cycle");
@@ -391,14 +391,17 @@ namespace QuestNav.Network
                     {
                         // Create a timeout task
                         var timeoutTask = Task.Delay(QuestNavConstants.Network.WEBSOCKET_CONNECTION_TIMEOUT * 1000);
-                        
+
                         // Create the connection task
                         var connectionTask = Task.Run(() =>
                         {
                             try
                             {
-                                return new Nt4Source(QuestNavConstants.Network.APP_NAME, resolvedAddress,
+                                Log($"Attempting to create Nt4Source with address: {resolvedAddress}, port: {QuestNavConstants.Network.SERVER_PORT}, app name: {QuestNavConstants.Network.APP_NAME}");
+                                var source = new Nt4Source(QuestNavConstants.Network.APP_NAME, resolvedAddress,
                                     QuestNavConstants.Network.SERVER_PORT);
+                                Log($"Nt4Source created successfully, checking connection status...");
+                                return source;
                             }
                             catch (Exception ex)
                             {
@@ -406,10 +409,10 @@ namespace QuestNav.Network
                                 return null;
                             }
                         });
-                        
+
                         // Wait for either the connection or timeout, whichever comes first
                         var completedTask = await Task.WhenAny(connectionTask, timeoutTask);
-                        
+
                         // If the timeout occurred first
                         if (completedTask == timeoutTask)
                         {
@@ -417,7 +420,7 @@ namespace QuestNav.Network
                             failedCandidates[candidate] = Time.time;
                             continue;
                         }
-                        
+
                         // Get the actual connection result
                         var sink = await connectionTask;
 
@@ -470,12 +473,12 @@ namespace QuestNav.Network
             {
                 return;
             }
-            
+
             Log("Robot disconnected - retrying");
-            
+
             // Safely disconnect if we have a connection
             SafeDisconnect();
-            
+
             // Start a fresh connection attempt
             ConnectToRobot();
         }
@@ -493,17 +496,17 @@ namespace QuestNav.Network
             frcDataSink.PublishTopic(QuestNavConstants.Topics.POSITION, "float[]");
             frcDataSink.PublishTopic(QuestNavConstants.Topics.QUATERNION, "float[]");
             frcDataSink.PublishTopic(QuestNavConstants.Topics.EULER_ANGLES, "float[]");
-            
+
             // Device data
             frcDataSink.PublishTopic(QuestNavConstants.Topics.BATTERY_PERCENT, "double");
             frcDataSink.PublishTopic(QuestNavConstants.Topics.TRACKING_LOST_COUNTER, "int");
             frcDataSink.PublishTopic(QuestNavConstants.Topics.CURRENTLY_TRACKING, "boolean");
-            
+
             frcDataSink.Subscribe(QuestNavConstants.Topics.MOSI, 0.1, false, false, false);
             frcDataSink.Subscribe(QuestNavConstants.Topics.INIT_POSITION, 0.1, false, false, false);
             frcDataSink.Subscribe(QuestNavConstants.Topics.INIT_EULER_ANGLES, 0.1, false, false, false);
             frcDataSink.Subscribe(QuestNavConstants.Topics.RESET_POSE, 0.1, false, false, false);
-            
+
             // Heartbeat system topics
             frcDataSink.PublishTopic(QuestNavConstants.Topics.HEARTBEAT_TO_ROBOT, "double");
             frcDataSink.Subscribe(QuestNavConstants.Topics.HEARTBEAT_FROM_ROBOT, 0.1, false, false, false);
@@ -516,14 +519,14 @@ namespace QuestNav.Network
         public void ForceReconnection()
         {
             Log("Forcing reconnection due to heartbeat failure");
-            
+
             // Disconnect existing connection
             SafeDisconnect();
-            
+
             // Reset connection state flags to enable reconnection
             connectionAttempt = false;
             connectionAttemptCompleted = true;
-            
+
             // Initiate reconnection
             ConnectToRobot();
         }
@@ -553,7 +556,7 @@ namespace QuestNav.Network
             // Reset connection state and restart connection process
             connectionAttempt = false;
             connectionAttemptCompleted = true;
-            
+
             // Restart the asynchronous connection process.
             ConnectToRobot();
         }
@@ -570,7 +573,7 @@ namespace QuestNav.Network
             {
                 return; // Exit early if connection isn't established
             }
-            
+
             frcDataSink.PublishValue(QuestNavConstants.Topics.FRAME_COUNT, frameIndex);
             frcDataSink.PublishValue(QuestNavConstants.Topics.TIMESTAMP, timeStamp);
             frcDataSink.PublishValue(QuestNavConstants.Topics.POSITION, position.ToArray());
@@ -602,7 +605,7 @@ namespace QuestNav.Network
             {
                 return; // Exit early if connection isn't established
             }
-            
+
             frcDataSink.PublishValue(topic, value);
         }
 
@@ -618,7 +621,7 @@ namespace QuestNav.Network
             {
                 return 0.0; // Return default value if connection isn't established
             }
-            
+
             return frcDataSink.GetDouble(topic);
         }
 
@@ -634,7 +637,7 @@ namespace QuestNav.Network
             {
                 return 0; // Return default value if connection isn't established
             }
-            
+
             return frcDataSink.GetLong(topic);
         }
 
@@ -650,7 +653,7 @@ namespace QuestNav.Network
             {
                 return new double[0]; // Return empty array if connection isn't established
             }
-            
+
             return frcDataSink.GetDoubleArray(topic);
         }
         #endregion
