@@ -324,11 +324,14 @@ namespace QuestNav.Network
             bool connectionEstablished = false;
             List<string> candidateAddresses = new List<string>()
             {
-                generateIP(),
-                "172.22.11.2",
-                $"roboRIO-{teamNumber}-FRC.local",
-                $"roboRIO-{teamNumber}-FRC.lan",
-                $"roboRIO-{teamNumber}-FRC.frc-field.local"
+                // "127.0.0.1",
+                // "localhost",
+                "0.0.0.0"
+                // generateIP(),
+                // "172.22.11.2",
+                // $"roboRIO-{teamNumber}-FRC.local",
+                // $"roboRIO-{teamNumber}-FRC.lan",
+                // $"roboRIO-{teamNumber}-FRC.frc-field.local"
             };
 
             while (!connectionEstablished)
