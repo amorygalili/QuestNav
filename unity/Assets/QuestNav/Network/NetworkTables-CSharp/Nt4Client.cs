@@ -31,11 +31,11 @@ namespace QuestNav.Network.NetworkTables_CSharp
             {"float[]", 19},
             {"string[]", 20},
         };
-        
+
         private readonly string _appName;
         private readonly string _serverAddress;
-        
-        
+
+
         private WebSocket _ws;
         private long? _serverTimeOffsetUs;
         private long _networkLatencyUs;
@@ -70,26 +70,74 @@ namespace QuestNav.Network.NetworkTables_CSharp
         {
             try
             {
-                if (_ws != null && (_ws.ReadyState == WebSocketState.Open || _ws.ReadyState == WebSocketState.Connecting))
+                Debug.Log($"[NT4] Attempting to connect to {_serverAddress}...");
+
+                if (_ws != null)
                 {
-                    return (true, null); // Already connected or connecting
+                    if (_ws.ReadyState == WebSocketState.Open)
+                    {
+                        Debug.Log($"[NT4] Already connected to {_serverAddress}");
+                        return (true, null); // Already connected
+                    }
+                    else if (_ws.ReadyState == WebSocketState.Connecting)
+                    {
+                        Debug.Log($"[NT4] Connection to {_serverAddress} already in progress");
+                        return (true, null); // Already connecting
+                    }
+                    else
+                    {
+                        Debug.Log($"[NT4] Disposing existing WebSocket with state {_ws.ReadyState}");
+                        _ws.Close();
+                        _ws = null;
+                    }
                 }
 
+                // Add detailed logging for connection troubleshooting
+                Debug.Log($"[NT4] Connection details:");
+                Debug.Log($"[NT4] - Server address: {_serverAddress}");
+                Debug.Log($"[NT4] - App name: {_appName}");
+
+                // Parse the server address to log host and port
+                try {
+                    Uri serverUri = new Uri(_serverAddress);
+                    Debug.Log($"[NT4] - Host: {serverUri.Host}");
+                    Debug.Log($"[NT4] - Port: {serverUri.Port}");
+                    Debug.Log($"[NT4] - Path: {serverUri.PathAndQuery}");
+                    Debug.Log($"[NT4] - Scheme: {serverUri.Scheme}");
+                } catch (Exception uriEx) {
+                    Debug.LogWarning($"[NT4] Could not parse server address as URI: {uriEx.Message}");
+                }
+
+                Debug.Log($"[NT4] Creating new WebSocket for {_serverAddress}");
                 _ws = new WebSocket(_serverAddress);
+
+                // Configure WebSocket options for better debugging
+                _ws.Log.Level = WebSocketSharp.LogLevel.Trace; // Enable detailed logging
+                _ws.Log.Output = (logData, message) => {
+                    Debug.Log($"[NT4-WebSocket] {logData.Level}: {message}");
+                };
+
+                // Set up event handlers
                 _ws.OnOpen += OnOpen;
                 _ws.OnMessage += OnMessage;
                 _ws.OnError += OnError;
                 _ws.OnClose += OnClose;
 
+                // Log connection attempt
+                Debug.Log($"[NT4] Initiating WebSocket connection to {_serverAddress}");
                 _ws.Connect();
+
+                Debug.Log($"[NT4] WebSocket.Connect() called, current state: {_ws.ReadyState}");
                 return (true, null);
             }
             catch (Exception ex)
             {
-                return (false, ex.Message);
+                string errorMsg = $"[NT4] Connection error: {ex.Message}\nStack trace: {ex.StackTrace}";
+                Debug.LogError(errorMsg);
+                return (false, errorMsg);
             }
         }
-        
+
         /// <summary>
         /// Disconnect from the NetworkTables server.
         /// </summary>
@@ -100,14 +148,14 @@ namespace QuestNav.Network.NetworkTables_CSharp
                 _ws.Close();
             }
         }
-        
+
         // Event handlers
         private void OnOpen(object sender, EventArgs e)
         {
             Debug.Log("[NT4] Connected with identity " + _appName);
             WsSendTimestamp();
-            
-            
+
+
         }
 
         private void OnMessage(object message, MessageEventArgs args)
@@ -146,17 +194,29 @@ namespace QuestNav.Network.NetworkTables_CSharp
                 HandleMsgPackMessage(msg);
             }
         }
-        
+
         private void OnError(object sender, ErrorEventArgs e)
         {
-            Debug.LogError("[NT4] Error: " + e.Message + " " + e.Exception);
+            Debug.LogError($"[NT4] WebSocket Error: {e.Message} | Exception: {e.Exception}");
+
+            // Log additional connection details for debugging
+            if (_ws != null)
+            {
+                Debug.LogError($"[NT4] WebSocket State: {_ws.ReadyState} | URL: {_serverAddress}");
+            }
         }
-        
+
         private void OnClose(object sender, CloseEventArgs e)
         {
-            Debug.Log("[NT4] Disconnected: " + e.Reason);
+            Debug.LogWarning($"[NT4] WebSocket Disconnected: {e.Reason} | Code: {e.Code} | WasClean: {e.WasClean}");
+
+            // Log additional details about the connection
+            if (_ws != null)
+            {
+                Debug.LogWarning($"[NT4] WebSocket State: {_ws.ReadyState} | URL: {_serverAddress}");
+            }
         }
-        
+
         /// <summary>
         /// Publish a topic to the server.
         /// </summary>
@@ -169,7 +229,7 @@ namespace QuestNav.Network.NetworkTables_CSharp
             _publishedTopics.Add(key, topic);
             WsPublishTopic(topic);
         }
-        
+
         /// <summary>
         /// Publish a topic to the server.
         /// </summary>
@@ -237,7 +297,7 @@ namespace QuestNav.Network.NetworkTables_CSharp
             _subscriptions.Add(sub.Uid, sub);
             return sub.Uid;
         }
-        
+
         /// <summary>
         /// Subscribe to a topic from the server.
         /// </summary>
@@ -252,7 +312,7 @@ namespace QuestNav.Network.NetworkTables_CSharp
             _subscriptions.Add(sub.Uid, sub);
             return sub.Uid;
         }
-        
+
         /// <summary>
         /// Subscribe to a topic from the server.
         /// </summary>
@@ -288,7 +348,7 @@ namespace QuestNav.Network.NetworkTables_CSharp
             _subscriptions.Remove(uid);
             WsUnsubscribe(sub);
         }
-        
+
         // ws utility functions
         private void WsSendJson(string method, Dictionary<string, object> paramsObj)
         {
@@ -301,22 +361,35 @@ namespace QuestNav.Network.NetworkTables_CSharp
             // convert msg to a json array, not object, containing only msg
             _ws.SendAsync(JsonConvert.SerializeObject(new object[] {msg}), null);
         }
-        
+
 void WsSendBinary(byte[] data)
         {
             if (!Connected())
             {
-                Debug.LogWarning("WebSocket is not open. Cannot send data.");
+                Debug.LogWarning($"[NT4] WebSocket is not open (State: {(_ws != null ? _ws.ReadyState.ToString() : "null")}). Cannot send data.");
                 return;
             }
-            _ws.SendAsync(data, null);
+
+            try
+            {
+                _ws.SendAsync(data, (completed) => {
+                    if (!completed)
+                    {
+                        Debug.LogError($"[NT4] Failed to send binary data to {_serverAddress}");
+                    }
+                });
+            }
+            catch (Exception ex)
+            {
+                Debug.LogError($"[NT4] Exception sending binary data: {ex.Message}");
+            }
         }
 
         private void WsPublishTopic(Nt4Topic topic)
         {
             WsSendJson("publish", topic.ToPublishObj());
         }
-        
+
         private void WsUnpublishTopic(Nt4Topic topic)
         {
             WsSendJson("unpublish", topic.ToUnpublishObj());
@@ -326,19 +399,19 @@ void WsSendBinary(byte[] data)
         {
             WsSendJson("subscribe", subscription.ToSubscribeObj());
         }
-        
+
         private void WsUnsubscribe(Nt4Subscription subscription)
         {
             WsSendJson("unsubscribe", subscription.ToUnsubscribeObj());
         }
-        
+
         private void WsSendTimestamp()
         {
             long timestamp = GetClientTimeUs();
             // Send the timestamp (convert using MessagePack) in the format: -1, 0, type, timestamp
             WsSendBinary(MessagePackSerializer.Serialize(new object[] {-1, 0, TypeStrIdxLookup["int"], timestamp}));
         }
-        
+
         private void WsHandleReceiveTimestamp(long serverTimestamp, long clientTimestamp) {
             long rxTime = GetClientTimeUs();
 
@@ -356,7 +429,7 @@ void WsSendBinary(byte[] data)
                 "ms latency"
             );
         }
-        
+
         // General Utility
         private static long GetClientTimeUs()
         {
@@ -364,7 +437,7 @@ void WsSendBinary(byte[] data)
             // Convert to us
             return timestamp * 1000;
         }
-        
+
         private long? GetServerTimeUs() {
             if (_serverTimeOffsetUs == null) return null;
             return GetClientTimeUs() + _serverTimeOffsetUs;
@@ -389,7 +462,7 @@ void WsSendBinary(byte[] data)
             int topicId = Convert.ToInt32(msg[0]);
             long timestampUs = Convert.ToInt64(msg[1]);
             object value = msg[3];
-            
+
             if (topicId >= 0)
             {
                 Nt4Topic topic = null;
@@ -413,7 +486,7 @@ void WsSendBinary(byte[] data)
         }
 
         private static int GetNewUid()
-        {   
+        {
             // Return a random int
             return new Random().Next(0, 10000000);
         }
