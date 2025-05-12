@@ -101,56 +101,103 @@ namespace QuestNav.Commands
         /// </summary>
         public void ProcessCommands()
         {
+            // Check for reset timeout first
+            if (HasResetTimedOut())
+            {
+                // If reset has timed out, clear the state and allow new commands
+                resetInProgress = false;
+                networkConnection.PublishValue(QuestNavConstants.Topics.MISO, 0);
+                QueuedLogger.LogWarning("[QuestNav] Reset operation timed out, state cleared");
+            }
+
+            // Get the current command from NetworkTables
             command = networkConnection.GetLong(QuestNavConstants.Topics.MOSI);
 
+            // Check if we're in a reset operation and the robot has acknowledged by clearing the command
             if (resetInProgress && command == 0)
             {
                 resetInProgress = false;
-                QueuedLogger.Log("[QuestNav] Reset operation completed");
+                QueuedLogger.Log("[QuestNav] Reset operation completed and acknowledged by robot");
                 return;
             }
 
-            switch (command)
+            // Process commands only if we're not already in a reset operation
+            if (!resetInProgress)
             {
-                case QuestNavConstants.Commands.HEADING_RESET:
-                    if (!resetInProgress)
-                    {
+                switch (command)
+                {
+                    case QuestNavConstants.Commands.HEADING_RESET:
                         QueuedLogger.Log("[QuestNav] Received heading reset request, initiating recenter...");
+                        resetInProgress = true; // Set flag before operation to prevent race conditions
                         RecenterPlayer();
-                        resetInProgress = true;
-                    }
-                    break;
-                case QuestNavConstants.Commands.POSE_RESET:
-                    if (!resetInProgress)
-                    {
+                        break;
+                    case QuestNavConstants.Commands.POSE_RESET:
                         QueuedLogger.Log("[QuestNav] Received pose reset request, initiating reset...");
+                        resetInProgress = true; // Set flag before operation to prevent race conditions
                         InitiatePoseReset();
                         QueuedLogger.Log("[QuestNav] Processing pose reset request.");
-                        resetInProgress = true;
-                    }
-                    break;
-                case QuestNavConstants.Commands.PING:
-                    QueuedLogger.Log("[QuestNav] Ping received, responding...");
-                    networkConnection.PublishValue(QuestNavConstants.Topics.MISO, QuestNavConstants.Commands.PING_RESPONSE);
-                    break;
-                default:
-                    if (!resetInProgress)
-                    {
+                        break;
+                    case QuestNavConstants.Commands.PING:
+                        QueuedLogger.Log("[QuestNav] Ping received, responding...");
+                        networkConnection.PublishValue(QuestNavConstants.Topics.MISO, QuestNavConstants.Commands.PING_RESPONSE);
+                        break;
+                    case 0:
+                        // No command, nothing to do
+                        break;
+                    default:
+                        QueuedLogger.LogWarning($"[QuestNav] Received unknown command: {command}");
                         networkConnection.PublishValue(QuestNavConstants.Topics.MISO, 0);
-                    }
-                    break;
+                        break;
+                }
+            }
+            else if (command != 0)
+            {
+                // If we're in a reset operation but received a new command, log it
+                QueuedLogger.LogWarning($"[QuestNav] Received command {command} while reset in progress, ignoring");
             }
         }
         #endregion
 
         #region Private Methods
         /// <summary>
+        /// Timestamp when the current reset operation started
+        /// </summary>
+        private float resetStartTime = 0f;
+
+        /// <summary>
+        /// Maximum time a reset operation can be in progress before timing out (seconds)
+        /// </summary>
+        private const float RESET_TIMEOUT_SECONDS = 5.0f;
+
+        /// <summary>
+        /// Checks if the current reset operation has timed out
+        /// </summary>
+        /// <returns>True if the reset operation has timed out</returns>
+        private bool HasResetTimedOut()
+        {
+            if (!resetInProgress) return false;
+
+            float elapsedTime = Time.time - resetStartTime;
+            if (elapsedTime > RESET_TIMEOUT_SECONDS)
+            {
+                QueuedLogger.LogWarning($"[QuestNav] Reset operation timed out after {elapsedTime:F1} seconds");
+                return true;
+            }
+
+            return false;
+        }
+
+        /// <summary>
         /// Initiates a pose reset based on received NetworkTables data
         /// </summary>
         private void InitiatePoseReset()
         {
+            // Set reset start time for timeout tracking
+            resetStartTime = Time.time;
+
             try {
                 // Use constants for retry logic and field dimensions from QuestNavConstants
+                QueuedLogger.Log("[QuestNav] Starting pose reset operation");
 
                 double[] resetPose = null;
                 bool success = false;
@@ -190,6 +237,9 @@ namespace QuestNav.Commands
                 // Exit if we couldn't get valid pose data
                 if (!success) {
                     QueuedLogger.LogWarning($"[QuestNav] Failed to read valid reset pose values after {attemptCount} attempts");
+                    // Send error response to robot
+                    networkConnection.PublishValue(QuestNavConstants.Topics.MISO, 0);
+                    resetInProgress = false;
                     return;
                 }
 
@@ -269,11 +319,14 @@ namespace QuestNav.Commands
                     QueuedLogger.LogWarning($"[QuestNav] Large position error detected!");
                 }
 
+                // Send success response to robot
+                QueuedLogger.Log("[QuestNav] Pose reset completed successfully, sending success response");
                 networkConnection.PublishValue(QuestNavConstants.Topics.MISO, QuestNavConstants.Commands.POSE_RESET_SUCCESS);
             }
             catch (Exception e) {
                 QueuedLogger.LogError($"[QuestNav] Error during pose reset: {e.Message}");
                 QueuedLogger.LogException(e);
+                // Send error response to robot - use 0 to indicate error
                 networkConnection.PublishValue(QuestNavConstants.Topics.MISO, 0);
                 resetInProgress = false;
             }
@@ -285,19 +338,43 @@ namespace QuestNav.Commands
         /// </summary>
         private void RecenterPlayer()
         {
+            // Set reset start time for timeout tracking
+            resetStartTime = Time.time;
+
             try {
+                QueuedLogger.Log("[QuestNav] Starting heading reset operation");
+
+                // Store current VR camera state for reference
+                Vector3 currentCameraPos = vrCamera.position;
+                Quaternion currentCameraRot = vrCamera.rotation;
+
+                QueuedLogger.Log($"[QuestNav] Before recenter - Camera Pos:{currentCameraPos:F3} Rot:{currentCameraRot.eulerAngles:F3}");
+
+                // Calculate rotation angle difference
                 float rotationAngleY = vrCamera.rotation.eulerAngles.y - resetTransform.rotation.eulerAngles.y;
 
+                // Apply rotation to camera root
                 vrCameraRoot.transform.Rotate(0, -rotationAngleY, 0);
 
+                // Calculate and apply position difference
                 Vector3 distanceDiff = resetTransform.position - vrCamera.position;
                 vrCameraRoot.transform.position += distanceDiff;
 
+                // Log final position and rotation for verification
+                QueuedLogger.Log($"[QuestNav] After recenter - Camera Pos:{vrCamera.position:F3} Rot:{vrCamera.rotation.eulerAngles:F3}");
+
+                // Calculate position error for verification
+                float posError = Vector3.Distance(vrCamera.position, resetTransform.position);
+                QueuedLogger.Log($"[QuestNav] Position error after recenter: {posError:F3}m");
+
+                // Send success response to robot
+                QueuedLogger.Log("[QuestNav] Heading reset completed successfully, sending success response");
                 networkConnection.PublishValue(QuestNavConstants.Topics.MISO, QuestNavConstants.Commands.HEADING_RESET_SUCCESS);
             }
             catch (Exception e) {
                 QueuedLogger.LogError($"[QuestNav] Error during recenter: {e.Message}");
                 QueuedLogger.LogException(e);
+                // Send error response to robot - use 0 to indicate error
                 networkConnection.PublishValue(QuestNavConstants.Topics.MISO, 0);
                 resetInProgress = false;
             }
