@@ -9,6 +9,8 @@ import java.io.InputStream;
 import java.util.HashMap;
 import java.util.Map;
 
+import com.questnav.unity.UnityBridge;
+
 import fi.iki.elonen.NanoHTTPD;
 import fi.iki.elonen.NanoHTTPD.Response;
 import fi.iki.elonen.NanoHTTPD.IHTTPSession;
@@ -24,6 +26,7 @@ public class QuestNavWebServer extends NanoHTTPD {
 
     private String webInterfacePath;
     private boolean isRunning = false;
+    private String cachedStatus = null;
 
     /**
      * Create a new QuestNavWebServer
@@ -65,6 +68,16 @@ public class QuestNavWebServer extends NanoHTTPD {
         super.stop();
         isRunning = false;
         System.out.println(TAG + ": Web server stopped");
+    }
+
+    /**
+     * Update the status information from Unity
+     * This is called from Unity to update the cached status
+     * @param status JSON string with status information
+     */
+    public void updateStatus(String status) {
+        this.cachedStatus = status;
+        System.out.println(TAG + ": Status updated from Unity");
     }
 
     /**
@@ -125,7 +138,12 @@ public class QuestNavWebServer extends NanoHTTPD {
      * Handle status request
      */
     private Response handleStatusRequest() {
-        // For now, return a placeholder response with some basic information
+        // Use the cached status if available
+        if (cachedStatus != null && !cachedStatus.isEmpty()) {
+            return new Response(Response.Status.OK, "application/json", cachedStatus);
+        }
+
+        // Fallback to a placeholder response if no cached status is available
         String statusJson = "{" +
             "\"isConnected\": false," +
             "\"connectionState\": \"Disconnected\"," +
@@ -168,6 +186,14 @@ public class QuestNavWebServer extends NanoHTTPD {
 
             System.out.println(TAG + ": Team number updated to " + teamNumber);
 
+            // Call Unity to update the team number
+            try {
+                UnityBridge.sendMessage("QuestNavWebInterface", "UpdateTeamNumber", teamNumber);
+                System.out.println(TAG + ": Sent team number update to Unity: " + teamNumber);
+            } catch (Exception e) {
+                System.err.println(TAG + ": Error sending team number to Unity: " + e.getMessage());
+            }
+
             return new Response(Response.Status.OK, "application/json",
                 "{\"success\": true}");
         } catch (Exception e) {
@@ -182,6 +208,14 @@ public class QuestNavWebServer extends NanoHTTPD {
      */
     private Response handleConnectToSim() {
         System.out.println(TAG + ": Connect to simulation requested");
+
+        // Call Unity to connect to simulation
+        try {
+            UnityBridge.sendMessage("QuestNavWebInterface", "ConnectToSim", "");
+            System.out.println(TAG + ": Sent connect to sim request to Unity");
+        } catch (Exception e) {
+            System.err.println(TAG + ": Error sending connect to sim request to Unity: " + e.getMessage());
+        }
 
         return new Response(Response.Status.OK, "application/json",
             "{\"success\": true}");

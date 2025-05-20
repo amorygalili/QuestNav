@@ -21,6 +21,9 @@ namespace QuestNav.Web
         private AndroidJavaObject webServer;
         private bool isWebServerRunning = false;
         private string webInterfacePath;
+        private string cachedStatusJson;
+        private float lastStatusUpdateTime;
+        private const float STATUS_UPDATE_INTERVAL = 1.0f; // Update status every second
         #endregion
 
         #region Unity Lifecycle Methods
@@ -52,7 +55,44 @@ namespace QuestNav.Web
         {
             StopWebServer();
         }
+
+        /// <summary>
+        /// Update is called once per frame
+        /// </summary>
+        private void Update()
+        {
+            // Update the status cache periodically
+            if (Time.time - lastStatusUpdateTime > STATUS_UPDATE_INTERVAL)
+            {
+                UpdateStatusCache();
+                lastStatusUpdateTime = Time.time;
+            }
+        }
         #endregion
+
+        /// <summary>
+        /// Update the cached status JSON
+        /// </summary>
+        private void UpdateStatusCache()
+        {
+            if (isWebServerRunning)
+            {
+                cachedStatusJson = GetStatus();
+
+                // If the web server is running, update the status in the Java code
+                if (webServer != null)
+                {
+                    try
+                    {
+                        webServer.Call("updateStatus", cachedStatusJson);
+                    }
+                    catch (Exception ex)
+                    {
+                        Debug.LogError($"[QuestNavWebInterface] Error updating status in web server: {ex.Message}");
+                    }
+                }
+            }
+        }
 
         #region Public Methods
         /// <summary>
@@ -91,14 +131,17 @@ namespace QuestNav.Web
         /// </summary>
         public void GetStatusForWebServer(string message)
         {
-            // Get the status
-            string status = GetStatus();
+            // Make sure the status is up to date
+            if (string.IsNullOrEmpty(cachedStatusJson))
+            {
+                UpdateStatusCache();
+            }
 
             // Log the status for debugging
-            Debug.Log($"[QuestNavWebInterface] GetStatusForWebServer: {status}");
+            Debug.Log($"[QuestNavWebInterface] GetStatusForWebServer: {cachedStatusJson}");
 
-            // In a real implementation, you would need to use a callback mechanism
-            // to send the status back to the Java code
+            // The status is now sent to the Java code via the updateStatus method
+            // which is called periodically in the Update method
         }
 
         /// <summary>
