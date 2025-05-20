@@ -1,7 +1,5 @@
 package fi.iki.elonen;
 
-import android.util.Log;
-
 import java.io.BufferedInputStream;
 import java.io.BufferedReader;
 import java.io.ByteArrayInputStream;
@@ -181,7 +179,8 @@ public abstract class NanoHTTPD {
                                 try {
                                     processClientRequest(inputStream, finalAccept);
                                 } catch (Exception e) {
-                                    Log.e(TAG, "Error processing client request", e);
+                                    System.err.println(TAG + ": Error processing client request: " + e.getMessage());
+                                    e.printStackTrace();
                                 } finally {
                                     safeClose(finalAccept);
                                 }
@@ -189,7 +188,8 @@ public abstract class NanoHTTPD {
                         }).start();
                     } catch (IOException e) {
                         if (running) {
-                            Log.e(TAG, "Communication error", e);
+                            System.err.println(TAG + ": Communication error: " + e.getMessage());
+                            e.printStackTrace();
                         }
                     }
                 } while (running);
@@ -209,7 +209,7 @@ public abstract class NanoHTTPD {
                 myServerSocket.close();
                 myServerSocket = null;
             } catch (IOException e) {
-                Log.e(TAG, "Error closing server socket", e);
+                System.err.println(TAG + ": Error closing server socket: " + e.getMessage());
             }
         }
         if (myThread != null) {
@@ -288,7 +288,7 @@ public abstract class NanoHTTPD {
             OutputStream outputStream = socket.getOutputStream();
             response.send(outputStream);
         } catch (IOException e) {
-            Log.e(TAG, "Error processing client request", e);
+            System.err.println(TAG + ": Error processing client request: " + e.getMessage());
         }
     }
 
@@ -310,7 +310,7 @@ public abstract class NanoHTTPD {
                         String value = URLDecoder.decode(token.substring(eq + 1), "UTF-8");
                         params.put(key, value);
                     } catch (UnsupportedEncodingException e) {
-                        Log.e(TAG, "Error decoding query parameter", e);
+                        System.err.println(TAG + ": Error decoding query parameter: " + e.getMessage());
                     }
                 }
             }
@@ -327,7 +327,7 @@ public abstract class NanoHTTPD {
             try {
                 closeable.close();
             } catch (IOException e) {
-                Log.e(TAG, "Error closing resource", e);
+                System.err.println(TAG + ": Error closing resource: " + e.getMessage());
             }
         }
     }
@@ -375,7 +375,7 @@ public abstract class NanoHTTPD {
          * data = null
          */
         public Response() {
-            this(Status.OK, MIME_HTML, null);
+            this(Status.OK, MIME_HTML, (InputStream)null);
         }
 
         /**
@@ -396,7 +396,7 @@ public abstract class NanoHTTPD {
             try {
                 this.data = txt != null ? new ByteArrayInputStream(txt.getBytes("UTF-8")) : null;
             } catch (UnsupportedEncodingException e) {
-                Log.e(TAG, "Error creating response", e);
+                System.err.println(TAG + ": Error creating response: " + e.getMessage());
             }
         }
 
@@ -438,9 +438,15 @@ public abstract class NanoHTTPD {
                     }
                 }
                 outputStream.flush();
-                safeClose(data);
+                if (data != null) {
+                    try {
+                        data.close();
+                    } catch (IOException e) {
+                        System.err.println(TAG + ": Error closing data stream: " + e.getMessage());
+                    }
+                }
             } catch (IOException e) {
-                Log.e(TAG, "Error sending response", e);
+                System.err.println(TAG + ": Error sending response: " + e.getMessage());
             }
         }
 

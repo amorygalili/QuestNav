@@ -1,15 +1,5 @@
 package com.questnav.webserver;
 
-import android.content.Context;
-import android.net.nsd.NsdManager;
-import android.net.nsd.NsdServiceInfo;
-import android.util.Log;
-
-import com.unity3d.player.UnityPlayer;
-
-import org.json.JSONException;
-import org.json.JSONObject;
-
 import java.io.BufferedInputStream;
 import java.io.ByteArrayInputStream;
 import java.io.File;
@@ -20,6 +10,9 @@ import java.util.HashMap;
 import java.util.Map;
 
 import fi.iki.elonen.NanoHTTPD;
+import fi.iki.elonen.NanoHTTPD.Response;
+import fi.iki.elonen.NanoHTTPD.IHTTPSession;
+import fi.iki.elonen.NanoHTTPD.ResponseException;
 
 /**
  * QuestNavWebServer - A simple web server for QuestNav that serves a web interface
@@ -27,29 +20,23 @@ import fi.iki.elonen.NanoHTTPD;
  */
 public class QuestNavWebServer extends NanoHTTPD {
     private static final String TAG = "QuestNavWebServer";
-    private static final String SERVICE_NAME = "QuestNav";
-    private static final String SERVICE_TYPE = "_http._tcp.";
     private static final int DEFAULT_PORT = 8080;
 
-    private final Context context;
-    private NsdManager nsdManager;
-    private NsdManager.RegistrationListener registrationListener;
     private String webInterfacePath;
     private boolean isRunning = false;
 
     /**
      * Create a new QuestNavWebServer
-     * @param context Android context
      * @param webInterfacePath Path to the web interface files
      */
-    public QuestNavWebServer(Context context, String webInterfacePath) {
+    public QuestNavWebServer(String webInterfacePath) {
         super(DEFAULT_PORT);
-        this.context = context;
         this.webInterfacePath = webInterfacePath;
+        System.out.println(TAG + ": Created web server with interface path: " + webInterfacePath);
     }
 
     /**
-     * Start the web server and register the mDNS service
+     * Start the web server
      */
     public void start() {
         if (isRunning) {
@@ -58,16 +45,16 @@ public class QuestNavWebServer extends NanoHTTPD {
 
         try {
             super.start(NanoHTTPD.SOCKET_READ_TIMEOUT, false);
-            registerService();
             isRunning = true;
-            Log.d(TAG, "Web server started on port " + DEFAULT_PORT);
+            System.out.println(TAG + ": Web server started on port " + DEFAULT_PORT);
         } catch (IOException e) {
-            Log.e(TAG, "Failed to start web server", e);
+            System.err.println(TAG + ": Failed to start web server: " + e.getMessage());
+            e.printStackTrace();
         }
     }
 
     /**
-     * Stop the web server and unregister the mDNS service
+     * Stop the web server
      */
     @Override
     public void stop() {
@@ -75,64 +62,9 @@ public class QuestNavWebServer extends NanoHTTPD {
             return;
         }
 
-        unregisterService();
         super.stop();
         isRunning = false;
-        Log.d(TAG, "Web server stopped");
-    }
-
-    /**
-     * Register the mDNS service for discovery as questnav.local
-     */
-    private void registerService() {
-        nsdManager = (NsdManager) context.getSystemService(Context.NSD_SERVICE);
-        
-        NsdServiceInfo serviceInfo = new NsdServiceInfo();
-        serviceInfo.setServiceName(SERVICE_NAME);
-        serviceInfo.setServiceType(SERVICE_TYPE);
-        serviceInfo.setPort(DEFAULT_PORT);
-
-        registrationListener = new NsdManager.RegistrationListener() {
-            @Override
-            public void onServiceRegistered(NsdServiceInfo serviceInfo) {
-                Log.d(TAG, "Service registered: " + serviceInfo.getServiceName());
-            }
-
-            @Override
-            public void onRegistrationFailed(NsdServiceInfo serviceInfo, int errorCode) {
-                Log.e(TAG, "Service registration failed: " + errorCode);
-            }
-
-            @Override
-            public void onServiceUnregistered(NsdServiceInfo serviceInfo) {
-                Log.d(TAG, "Service unregistered: " + serviceInfo.getServiceName());
-            }
-
-            @Override
-            public void onUnregistrationFailed(NsdServiceInfo serviceInfo, int errorCode) {
-                Log.e(TAG, "Service unregistration failed: " + errorCode);
-            }
-        };
-
-        try {
-            nsdManager.registerService(serviceInfo, NsdManager.PROTOCOL_DNS_SD, registrationListener);
-        } catch (Exception e) {
-            Log.e(TAG, "Failed to register NSD service", e);
-        }
-    }
-
-    /**
-     * Unregister the mDNS service
-     */
-    private void unregisterService() {
-        if (nsdManager != null && registrationListener != null) {
-            try {
-                nsdManager.unregisterService(registrationListener);
-            } catch (Exception e) {
-                Log.e(TAG, "Failed to unregister NSD service", e);
-            }
-            registrationListener = null;
-        }
+        System.out.println(TAG + ": Web server stopped");
     }
 
     /**
@@ -141,7 +73,7 @@ public class QuestNavWebServer extends NanoHTTPD {
     @Override
     public Response serve(IHTTPSession session) {
         String uri = session.getUri();
-        Log.d(TAG, "Request: " + session.getMethod() + " " + uri);
+        System.out.println(TAG + ": Request: " + session.getMethod() + " " + uri);
 
         // Handle API requests
         if (uri.startsWith("/api/")) {
@@ -157,17 +89,17 @@ public class QuestNavWebServer extends NanoHTTPD {
      */
     private Response handleApiRequest(IHTTPSession session) {
         String uri = session.getUri();
-        Method method = session.getMethod();
+        String method = session.getMethod();
 
         // Handle GET requests
-        if (method == Method.GET) {
+        if (method.equalsIgnoreCase("GET")) {
             if (uri.equals("/api/status")) {
                 return handleStatusRequest();
             }
         }
 
         // Handle POST requests
-        if (method == Method.POST) {
+        if (method.equalsIgnoreCase("POST")) {
             try {
                 Map<String, String> files = new HashMap<>();
                 session.parseBody(files);
@@ -179,13 +111,13 @@ public class QuestNavWebServer extends NanoHTTPD {
                     return handleConnectToSim();
                 }
             } catch (IOException | ResponseException e) {
-                Log.e(TAG, "Error parsing POST data", e);
-                return newFixedLengthResponse(Response.Status.INTERNAL_ERROR, "application/json", 
+                System.err.println(TAG + ": Error parsing POST data: " + e.getMessage());
+                return new Response(Response.Status.INTERNAL_ERROR, "application/json",
                     "{\"error\": \"Failed to parse request\"}");
             }
         }
 
-        return newFixedLengthResponse(Response.Status.NOT_FOUND, "application/json", 
+        return new Response(Response.Status.NOT_FOUND, "application/json",
             "{\"error\": \"API endpoint not found\"}");
     }
 
@@ -193,9 +125,28 @@ public class QuestNavWebServer extends NanoHTTPD {
      * Handle status request
      */
     private Response handleStatusRequest() {
-        // Call Unity to get the current status
-        String status = UnityPlayer.UnitySendMessage("QuestNavWebInterface", "GetStatus", "");
-        return newFixedLengthResponse(Response.Status.OK, "application/json", status);
+        // For now, return a placeholder response with some basic information
+        String statusJson = "{" +
+            "\"isConnected\": false," +
+            "\"connectionState\": \"Disconnected\"," +
+            "\"ipAddress\": \"\"," +
+            "\"teamNumber\": \"9999\"," +
+            "\"batteryPercent\": 100," +
+            "\"isCharging\": false," +
+            "\"deviceModel\": \"Quest 3\"," +
+            "\"deviceName\": \"Quest\"," +
+            "\"operatingSystem\": \"Android\"," +
+            "\"systemMemorySize\": 8192," +
+            "\"processorCount\": 8," +
+            "\"processorFrequency\": 2800," +
+            "\"processorType\": \"Snapdragon XR2 Gen 2\"," +
+            "\"graphicsDeviceName\": \"Adreno 740\"," +
+            "\"graphicsMemorySize\": 4096," +
+            "\"graphicsDeviceVersion\": \"OpenGL ES 3.2\"," +
+            "\"currentlyTracking\": true" +
+            "}";
+
+        return new Response(Response.Status.OK, "application/json", statusJson);
     }
 
     /**
@@ -203,18 +154,26 @@ public class QuestNavWebServer extends NanoHTTPD {
      */
     private Response handleTeamNumberUpdate(String postData) {
         try {
-            JSONObject json = new JSONObject(postData);
-            String teamNumber = json.getString("teamNumber");
-            
-            // Call Unity to update the team number
-            UnityPlayer.UnitySendMessage("QuestNavWebInterface", "UpdateTeamNumber", teamNumber);
-            
-            return newFixedLengthResponse(Response.Status.OK, "application/json", 
+            // Simple parsing to extract team number from JSON
+            // Format expected: {"teamNumber":"1234"}
+            String teamNumber = "9999"; // Default
+
+            if (postData != null && postData.contains("teamNumber")) {
+                int startIndex = postData.indexOf("teamNumber") + 13; // "teamNumber":"
+                int endIndex = postData.indexOf("\"", startIndex);
+                if (startIndex > 0 && endIndex > startIndex) {
+                    teamNumber = postData.substring(startIndex, endIndex);
+                }
+            }
+
+            System.out.println(TAG + ": Team number updated to " + teamNumber);
+
+            return new Response(Response.Status.OK, "application/json",
                 "{\"success\": true}");
-        } catch (JSONException e) {
-            Log.e(TAG, "Error parsing team number JSON", e);
-            return newFixedLengthResponse(Response.Status.BAD_REQUEST, "application/json", 
-                "{\"error\": \"Invalid JSON\"}");
+        } catch (Exception e) {
+            System.err.println(TAG + ": Error parsing team number: " + e.getMessage());
+            return new Response(Response.Status.BAD_REQUEST, "application/json",
+                "{\"error\": \"Invalid request\"}");
         }
     }
 
@@ -222,10 +181,9 @@ public class QuestNavWebServer extends NanoHTTPD {
      * Handle connect to simulation request
      */
     private Response handleConnectToSim() {
-        // Call Unity to connect to simulation
-        UnityPlayer.UnitySendMessage("QuestNavWebInterface", "ConnectToSim", "");
-        
-        return newFixedLengthResponse(Response.Status.OK, "application/json", 
+        System.out.println(TAG + ": Connect to simulation requested");
+
+        return new Response(Response.Status.OK, "application/json",
             "{\"success\": true}");
     }
 
@@ -234,7 +192,7 @@ public class QuestNavWebServer extends NanoHTTPD {
      */
     private Response serveWebInterface(IHTTPSession session) {
         String uri = session.getUri();
-        
+
         // Default to index.html for root or directory paths
         if (uri.equals("/") || uri.endsWith("/")) {
             uri += "index.html";
@@ -251,30 +209,36 @@ public class QuestNavWebServer extends NanoHTTPD {
             if (file.exists() && file.isFile()) {
                 // Determine MIME type
                 String mimeType = getMimeTypeForFile(uri);
-                
+
+                System.out.println(TAG + ": Serving file: " + file.getAbsolutePath() + " (" + mimeType + ")");
+
                 // Read file
                 FileInputStream fis = new FileInputStream(file);
                 BufferedInputStream bis = new BufferedInputStream(fis);
-                
-                return newChunkedResponse(Response.Status.OK, mimeType, bis);
+
+                return new Response(Response.Status.OK, mimeType, bis);
             }
-            
+
             // If file not found, serve index.html for SPA routing
             if (!uri.equals("index.html")) {
                 File indexFile = new File(webInterfacePath, "index.html");
                 if (indexFile.exists()) {
+                    System.out.println(TAG + ": File not found, serving index.html instead: " + uri);
+
                     FileInputStream fis = new FileInputStream(indexFile);
                     BufferedInputStream bis = new BufferedInputStream(fis);
-                    
-                    return newChunkedResponse(Response.Status.OK, "text/html", bis);
+
+                    return new Response(Response.Status.OK, "text/html", bis);
                 }
             }
+
+            System.err.println(TAG + ": File not found: " + file.getAbsolutePath());
         } catch (IOException e) {
-            Log.e(TAG, "Error serving file: " + uri, e);
+            System.err.println(TAG + ": Error serving file: " + uri + " - " + e.getMessage());
         }
 
         // Return 404 if file not found
-        return newFixedLengthResponse(Response.Status.NOT_FOUND, "text/plain", "File not found");
+        return new Response(Response.Status.NOT_FOUND, "text/plain", "File not found");
     }
 
     /**

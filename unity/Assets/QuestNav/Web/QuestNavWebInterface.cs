@@ -86,6 +86,22 @@ namespace QuestNav.Web
         }
 
         /// <summary>
+        /// Get the current status for the web server
+        /// This is called from the Java code via UnitySendMessage
+        /// </summary>
+        public void GetStatusForWebServer(string message)
+        {
+            // Get the status
+            string status = GetStatus();
+
+            // Log the status for debugging
+            Debug.Log($"[QuestNavWebInterface] GetStatusForWebServer: {status}");
+
+            // In a real implementation, you would need to use a callback mechanism
+            // to send the status back to the Java code
+        }
+
+        /// <summary>
         /// Update the team number
         /// </summary>
         /// <param name="teamNumber">The new team number</param>
@@ -314,14 +330,9 @@ namespace QuestNav.Web
                 {
                     Debug.Log("[QuestNavWebInterface] Starting web server");
 
-                    // Get the Android context
-                    AndroidJavaClass unityPlayer = new AndroidJavaClass("com.unity3d.player.UnityPlayer");
-                    AndroidJavaObject activity = unityPlayer.GetStatic<AndroidJavaObject>("currentActivity");
-                    AndroidJavaObject context = activity.Call<AndroidJavaObject>("getApplicationContext");
-
                     // Create the web server
                     AndroidJavaClass webServerClass = new AndroidJavaClass("com.questnav.webserver.QuestNavWebServer");
-                    webServer = new AndroidJavaObject("com.questnav.webserver.QuestNavWebServer", context, webInterfacePath);
+                    webServer = new AndroidJavaObject("com.questnav.webserver.QuestNavWebServer", webInterfacePath);
 
                     // Start the web server
                     webServer.Call("start");
