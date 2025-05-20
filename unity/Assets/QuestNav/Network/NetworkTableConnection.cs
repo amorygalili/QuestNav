@@ -373,10 +373,11 @@ namespace QuestNav.Network
                 // Normal robot connection addresses
                 candidateAddresses = new List<string>()
                 {
-                    generateIP(),
-                    $"roboRIO-{teamNumber}-FRC.local",
-                    $"roboRIO-{teamNumber}-FRC.lan",
-                    $"roboRIO-{teamNumber}-FRC.frc-field.local"
+                    "10.24.23.2"
+                    // generateIP(),
+                    // $"roboRIO-{teamNumber}-FRC.local",
+                    // $"roboRIO-{teamNumber}-FRC.lan",
+                    // $"roboRIO-{teamNumber}-FRC.frc-field.local"
                 };
             }
 

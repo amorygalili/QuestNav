@@ -1,30 +1,73 @@
-# React + TypeScript + Vite
+# QuestNav Web Interface
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+This is a web-based interface for the QuestNav application. It allows you to control and monitor the QuestNav app from a web browser when connected to the same network as the Quest headset.
 
-Currently, two official plugins are available:
+## Features
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react/README.md) uses [Babel](https://babeljs.io/) for Fast Refresh
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
+- Set team number for robot connection
+- Connect to simulation
+- View connection status
+- View device information and debug data
 
-## Expanding the ESLint configuration
+## Development
 
-If you are developing a production application, we recommend updating the configuration to enable type aware lint rules:
+This project is built with:
 
-- Configure the top-level `parserOptions` property like this:
+- React
+- TypeScript
+- Material-UI
+- Vite
 
-```js
-export default {
-  // other rules...
-  parserOptions: {
-    ecmaVersion: 'latest',
-    sourceType: 'module',
-    project: ['./tsconfig.json', './tsconfig.node.json'],
-    tsconfigRootDir: __dirname,
-  },
-}
+### Prerequisites
+
+- Node.js 16+
+- npm or yarn
+
+### Setup
+
+1. Install dependencies:
+
+```bash
+npm install
 ```
 
-- Replace `plugin:@typescript-eslint/recommended` to `plugin:@typescript-eslint/recommended-type-checked` or `plugin:@typescript-eslint/strict-type-checked`
-- Optionally add `plugin:@typescript-eslint/stylistic-type-checked`
-- Install [eslint-plugin-react](https://github.com/jsx-eslint/eslint-plugin-react) and add `plugin:react/recommended` & `plugin:react/jsx-runtime` to the `extends` list
+2. Start the development server:
+
+```bash
+npm run dev
+```
+
+3. Build for production:
+
+```bash
+npm run build
+```
+
+## Integration with QuestNav
+
+The built web interface is served by a simple HTTP server running on the Quest headset. The server is implemented in Java and integrated with the Unity application.
+
+### Building and Deploying
+
+To build the web interface and copy it to the Unity project, run the `build-web-interface.ps1` script from the root of the project:
+
+```bash
+./build-web-interface.ps1
+```
+
+This will:
+1. Install dependencies
+2. Build the web interface
+3. Copy the built files to the Unity project's StreamingAssets folder
+
+## Accessing the Web Interface
+
+When the QuestNav app is running on the Quest headset and connected to a robot network, you can access the web interface by navigating to `http://questnav.local` in a web browser on any device connected to the same network.
+
+## API Endpoints
+
+The web interface communicates with the QuestNav app through the following API endpoints:
+
+- `GET /api/status` - Get the current status of the QuestNav app
+- `POST /api/team` - Update the team number
+- `POST /api/sim` - Connect to simulation
