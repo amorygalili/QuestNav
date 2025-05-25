@@ -226,25 +226,47 @@ public class QuestNavWebServer extends NanoHTTPD {
      */
     private Response serveWebInterface(IHTTPSession session) {
         String uri = session.getUri();
+        System.out.println("[QuestNav] serveWebInterface: Original URI: " + uri);
+        System.out.println("[QuestNav] serveWebInterface: Web interface path: " + webInterfacePath);
 
         // Default to index.html for root or directory paths
         if (uri.equals("/") || uri.endsWith("/")) {
             uri += "index.html";
+            System.out.println("[QuestNav] serveWebInterface: Modified URI to: " + uri);
         }
 
         // Remove leading slash
         if (uri.startsWith("/")) {
             uri = uri.substring(1);
+            System.out.println("[QuestNav] serveWebInterface: Removed leading slash, URI now: " + uri);
         }
 
         try {
             // Try to find the file in the web interface directory
             File file = new File(webInterfacePath, uri);
+            System.out.println("[QuestNav] serveWebInterface: Looking for file: " + file.getAbsolutePath());
+            System.out.println("[QuestNav] serveWebInterface: File exists: " + file.exists());
+            System.out.println("[QuestNav] serveWebInterface: Is file: " + file.isFile());
+
+            // List directory contents for debugging
+            File webDir = new File(webInterfacePath);
+            if (webDir.exists() && webDir.isDirectory()) {
+                File[] files = webDir.listFiles();
+                System.out.println("[QuestNav] serveWebInterface: Web directory contains " + (files != null ? files.length : 0) + " items:");
+                if (files != null) {
+                    for (File f : files) {
+                        System.out.println("[QuestNav] serveWebInterface:   - " + f.getName() + " (isFile: " + f.isFile() + ", isDir: " + f.isDirectory() + ")");
+                    }
+                }
+            } else {
+                System.err.println("[QuestNav] serveWebInterface: Web interface directory does not exist or is not a directory: " + webInterfacePath);
+            }
+
             if (file.exists() && file.isFile()) {
                 // Determine MIME type
                 String mimeType = getMimeTypeForFile(uri);
 
-                System.out.println(TAG + ": Serving file: " + file.getAbsolutePath() + " (" + mimeType + ")");
+                System.out.println("[QuestNav] serveWebInterface: Serving file: " + file.getAbsolutePath() + " (" + mimeType + ")");
 
                 // Read file
                 FileInputStream fis = new FileInputStream(file);
@@ -256,8 +278,11 @@ public class QuestNavWebServer extends NanoHTTPD {
             // If file not found, serve index.html for SPA routing
             if (!uri.equals("index.html")) {
                 File indexFile = new File(webInterfacePath, "index.html");
+                System.out.println("[QuestNav] serveWebInterface: Trying fallback to index.html: " + indexFile.getAbsolutePath());
+                System.out.println("[QuestNav] serveWebInterface: Index file exists: " + indexFile.exists());
+
                 if (indexFile.exists()) {
-                    System.out.println(TAG + ": File not found, serving index.html instead: " + uri);
+                    System.out.println("[QuestNav] serveWebInterface: File not found, serving index.html instead: " + uri);
 
                     FileInputStream fis = new FileInputStream(indexFile);
                     BufferedInputStream bis = new BufferedInputStream(fis);
@@ -266,9 +291,10 @@ public class QuestNavWebServer extends NanoHTTPD {
                 }
             }
 
-            System.err.println(TAG + ": File not found: " + file.getAbsolutePath());
+            System.err.println("[QuestNav] serveWebInterface: File not found: " + file.getAbsolutePath());
         } catch (IOException e) {
-            System.err.println(TAG + ": Error serving file: " + uri + " - " + e.getMessage());
+            System.err.println("[QuestNav] serveWebInterface: Error serving file: " + uri + " - " + e.getMessage());
+            e.printStackTrace();
         }
 
         // Return 404 if file not found

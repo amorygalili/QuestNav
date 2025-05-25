@@ -4,6 +4,7 @@ using System.Threading.Tasks;
 using QuestNav.Core;
 using QuestNav.Network;
 using UnityEngine;
+using UnityEngine.Networking;
 using Newtonsoft.Json;
 
 namespace QuestNav.Web
@@ -193,19 +194,17 @@ namespace QuestNav.Web
                 string indexPath = Path.Combine(webInterfacePath, "index.html");
                 if (!File.Exists(indexPath))
                 {
-                    Debug.Log("[QuestNavWebInterface] Extracting web interface files");
+                    Debug.Log("[QuestNavWebInterface] Extracting web interface files from StreamingAssets");
 
-                    // On Android, we need to use WWW to access StreamingAssets
+                    // On Android, we need to use UnityWebRequest to access StreamingAssets
                     if (Application.platform == RuntimePlatform.Android)
                     {
                         ExtractFilesOnAndroid();
                     }
                     else
                     {
-                        // Extract files from StreamingAssets
+                        // Extract files from StreamingAssets on other platforms
                         string sourcePath = Path.Combine(Application.streamingAssetsPath, "webinterface");
-
-                        // Copy all files from StreamingAssets to persistent data path
                         CopyFilesRecursively(sourcePath, webInterfacePath);
                     }
                 }
@@ -225,102 +224,23 @@ namespace QuestNav.Web
         {
             try
             {
-                // Create a minimal web interface if the files don't exist
-                string indexHtml = @"<!DOCTYPE html>
-<html>
-<head>
-    <meta charset='UTF-8'>
-    <meta name='viewport' content='width=device-width, initial-scale=1.0'>
-    <title>QuestNav Web Interface</title>
-    <style>
-        body { font-family: Arial, sans-serif; margin: 0; padding: 20px; background-color: #0F172A; color: white; }
-        h1 { color: #38BDF8; }
-        .card { background-color: #1E293B; padding: 20px; margin-bottom: 20px; border-radius: 8px; }
-        button { background-color: #38BDF8; color: white; border: none; padding: 10px 15px; border-radius: 4px; cursor: pointer; }
-        button:hover { background-color: #0EA5E9; }
-        input { padding: 8px; margin-right: 10px; border-radius: 4px; border: 1px solid #ccc; }
-        .status { margin-top: 10px; }
-        .connected { color: #10B981; }
-        .disconnected { color: #EF4444; }
-    </style>
-</head>
-<body>
-    <h1>QuestNav Web Interface</h1>
-    <div class='card'>
-        <h2>Connection Settings</h2>
-        <div>
-            <input type='text' id='teamNumber' placeholder='Team Number'>
-            <button onclick='updateTeamNumber()'>Update</button>
-            <button onclick='connectToSim()' style='background-color: #FB923C;'>Connect to Sim</button>
-        </div>
-    </div>
-    <div class='card'>
-        <h2>Status</h2>
-        <div id='status'>Loading...</div>
-    </div>
+                Debug.Log("[QuestNavWebInterface] Starting Android file extraction");
 
-    <script>
-        // Fetch status every 2 seconds
-        setInterval(fetchStatus, 2000);
-        fetchStatus();
+                // List of files to extract (we need to know the file names since we can't list directory contents in APK)
+                string[] filesToExtract = {
+                    "index.html",
+                    "favicon.svg",
+                    "vite.svg",
+                    "assets/index-CLaf7Iio.js",
+                    "assets/index-CPuA3Y3i.css"
+                };
 
-        function fetchStatus() {
-            fetch('/api/status')
-                .then(response => response.json())
-                .then(data => {
-                    const statusDiv = document.getElementById('status');
-                    statusDiv.innerHTML = `
-                        <div class='status'>
-                            <p><strong>Connection:</strong> <span class='${data.isConnected ? 'connected' : 'disconnected'}'>${data.isConnected ? 'Connected' : 'Disconnected'}</span></p>
-                            <p><strong>State:</strong> ${data.connectionState}</p>
-                            <p><strong>IP Address:</strong> ${data.ipAddress || 'N/A'}</p>
-                            <p><strong>Team Number:</strong> ${data.teamNumber}</p>
-                            <p><strong>Battery:</strong> ${data.batteryPercent.toFixed(1)}%${data.isCharging ? ' (Charging)' : ''}</p>
-                            <p><strong>Tracking:</strong> ${data.currentlyTracking ? 'Active' : 'Lost'}</p>
-                        </div>
-                    `;
-                    document.getElementById('teamNumber').value = data.teamNumber;
-                })
-                .catch(error => {
-                    document.getElementById('status').innerHTML = '<p>Error connecting to server</p>';
-                });
-        }
-
-        function updateTeamNumber() {
-            const teamNumber = document.getElementById('teamNumber').value;
-            fetch('/api/team', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({ teamNumber }),
-            })
-            .then(response => {
-                if (response.ok) {
-                    fetchStatus();
+                foreach (string fileName in filesToExtract)
+                {
+                    await ExtractFileFromStreamingAssets(fileName);
                 }
-            });
-        }
 
-        function connectToSim() {
-            fetch('/api/sim', {
-                method: 'POST',
-            })
-            .then(response => {
-                if (response.ok) {
-                    fetchStatus();
-                }
-            });
-        }
-    </script>
-</body>
-</html>";
-
-                // Write the index.html file
-                string indexPath = Path.Combine(webInterfacePath, "index.html");
-                File.WriteAllText(indexPath, indexHtml);
-
-                Debug.Log("[QuestNavWebInterface] Created minimal web interface");
+                Debug.Log("[QuestNavWebInterface] Android file extraction completed");
             }
             catch (Exception ex)
             {
@@ -329,26 +249,100 @@ namespace QuestNav.Web
         }
 
         /// <summary>
+        /// Extract a single file from StreamingAssets on Android
+        /// </summary>
+        private async Task ExtractFileFromStreamingAssets(string fileName)
+        {
+            try
+            {
+                string sourceUrl = Path.Combine(Application.streamingAssetsPath, "webinterface", fileName).Replace('\\', '/');
+                string destPath = Path.Combine(webInterfacePath, fileName);
+
+                Debug.Log($"[QuestNavWebInterface] Extracting: {sourceUrl} -> {destPath}");
+
+                // Create directory if needed
+                string destDir = Path.GetDirectoryName(destPath);
+                if (!Directory.Exists(destDir))
+                {
+                    Directory.CreateDirectory(destDir);
+                    Debug.Log($"[QuestNavWebInterface] Created directory: {destDir}");
+                }
+
+                // Use UnityWebRequest to read the file from StreamingAssets
+                using (var request = UnityWebRequest.Get(sourceUrl))
+                {
+                    var operation = request.SendWebRequest();
+
+                    // Wait for the request to complete
+                    while (!operation.isDone)
+                    {
+                        await Task.Yield();
+                    }
+
+                    if (request.result == UnityWebRequest.Result.Success)
+                    {
+                        // Write the file to the destination
+                        File.WriteAllBytes(destPath, request.downloadHandler.data);
+                        Debug.Log($"[QuestNavWebInterface] Successfully extracted: {fileName}");
+                    }
+                    else
+                    {
+                        Debug.LogError($"[QuestNavWebInterface] Failed to extract {fileName}: {request.error}");
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Debug.LogError($"[QuestNavWebInterface] Error extracting {fileName}: {ex.Message}");
+            }
+        }
+
+        /// <summary>
         /// Copy files recursively from source to destination
         /// </summary>
         private void CopyFilesRecursively(string sourcePath, string targetPath)
         {
+            Debug.Log($"[QuestNavWebInterface] CopyFilesRecursively: {sourcePath} -> {targetPath}");
+
+            // Check if source directory exists
+            if (!Directory.Exists(sourcePath))
+            {
+                Debug.LogError($"[QuestNavWebInterface] Source directory does not exist: {sourcePath}");
+                return;
+            }
+
             // Create the target directory if it doesn't exist
             if (!Directory.Exists(targetPath))
             {
                 Directory.CreateDirectory(targetPath);
+                Debug.Log($"[QuestNavWebInterface] Created target directory: {targetPath}");
             }
 
-            // Copy all files
-            foreach (string filePath in Directory.GetFiles(sourcePath))
+            // Copy all files (excluding .meta files)
+            string[] files = Directory.GetFiles(sourcePath);
+            Debug.Log($"[QuestNavWebInterface] Found {files.Length} files in {sourcePath}");
+
+            foreach (string filePath in files)
             {
                 string fileName = Path.GetFileName(filePath);
+
+                // Skip Unity .meta files
+                if (fileName.EndsWith(".meta"))
+                {
+                    Debug.Log($"[QuestNavWebInterface] Skipping .meta file: {fileName}");
+                    continue;
+                }
+
                 string destFile = Path.Combine(targetPath, fileName);
                 File.Copy(filePath, destFile, true);
+                Debug.Log($"[QuestNavWebInterface] Copied file: {fileName}");
             }
 
             // Copy all subdirectories
-            foreach (string dirPath in Directory.GetDirectories(sourcePath))
+            string[] directories = Directory.GetDirectories(sourcePath);
+            Debug.Log($"[QuestNavWebInterface] Found {directories.Length} subdirectories in {sourcePath}");
+
+            foreach (string dirPath in directories)
             {
                 string dirName = Path.GetFileName(dirPath);
                 string destDir = Path.Combine(targetPath, dirName);
