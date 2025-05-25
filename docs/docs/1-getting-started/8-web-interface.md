@@ -8,11 +8,7 @@ QuestNav includes a web-based interface that allows you to control and monitor t
 
 ## Accessing the Web Interface
 
-When the QuestNav app is running on the Quest headset and connected to a robot network, you can access the web interface by navigating to `http://questnav.local` in a web browser on any device connected to the same network.
-
-:::tip
-If you're having trouble accessing the web interface using the `questnav.local` domain, you can also try using the Quest's IP address directly, e.g., `http://192.168.1.100:8080`.
-:::
+When the QuestNav app is running on the Quest headset and connected to a robot network, you can access the web interface by navigating to the Quest's IP address on port 8080 (e.g., `http://192.168.1.100:8080`) in a web browser on any device connected to the same network.
 
 ## Features
 
@@ -48,7 +44,7 @@ If you cannot access the web interface:
 
 1. Make sure your computer is connected to the same network as the Quest headset
 2. Verify that the QuestNav app is running on the Quest
-3. Try accessing the interface using the Quest's IP address instead of the domain name
+3. Make sure you're using the correct IP address of the Quest headset
 4. Check if there are any firewall settings blocking access to port 8080
 
 ## Technical Details
