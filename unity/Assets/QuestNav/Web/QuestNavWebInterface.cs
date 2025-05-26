@@ -3,6 +3,7 @@ using System.IO;
 using System.Threading.Tasks;
 using QuestNav.Core;
 using QuestNav.Network;
+using QuestNav.Camera;
 using UnityEngine;
 using UnityEngine.Networking;
 using Newtonsoft.Json;
@@ -16,6 +17,7 @@ namespace QuestNav.Web
     {
         #region Serialized Fields
         [SerializeField] private NetworkTableConnection networkConnection;
+        [SerializeField] private PassthroughCameraStreamer cameraStreamer;
         #endregion
 
         #region Private Fields
@@ -171,6 +173,76 @@ namespace QuestNav.Web
             // Update the team number to "localhost"
             UpdateTeamNumber("localhost");
         }
+
+        /// <summary>
+        /// Start camera streaming
+        /// This is called from the Java code via UnitySendMessage
+        /// </summary>
+        public void StartCameraStreaming(string message)
+        {
+            Debug.Log("[QuestNavWebInterface] Starting camera streaming");
+
+            if (cameraStreamer != null)
+            {
+                cameraStreamer.StartStreaming();
+            }
+            else
+            {
+                Debug.LogError("[QuestNavWebInterface] Camera streamer not found");
+            }
+        }
+
+        /// <summary>
+        /// Stop camera streaming
+        /// This is called from the Java code via UnitySendMessage
+        /// </summary>
+        public void StopCameraStreaming(string message)
+        {
+            Debug.Log("[QuestNavWebInterface] Stopping camera streaming");
+
+            if (cameraStreamer != null)
+            {
+                cameraStreamer.StopStreaming();
+            }
+        }
+
+        /// <summary>
+        /// Get the latest camera frame
+        /// This is called from the Java code via UnitySendMessage
+        /// </summary>
+        public byte[] GetLatestCameraFrame()
+        {
+            if (cameraStreamer != null)
+            {
+                return cameraStreamer.GetLatestFrame();
+            }
+            return null;
+        }
+
+        /// <summary>
+        /// Get the next camera frame from buffer
+        /// This is called from the Java code via UnitySendMessage
+        /// </summary>
+        public byte[] GetNextCameraFrame()
+        {
+            if (cameraStreamer != null)
+            {
+                return cameraStreamer.GetNextFrame();
+            }
+            return null;
+        }
+
+        /// <summary>
+        /// Check if camera streaming is active
+        /// </summary>
+        public bool IsCameraStreaming()
+        {
+            if (cameraStreamer != null)
+            {
+                return cameraStreamer.IsStreaming;
+            }
+            return false;
+        }
         #endregion
 
         #region Private Methods
@@ -231,7 +303,7 @@ namespace QuestNav.Web
                     "index.html",
                     "favicon.svg",
                     "vite.svg",
-                    "assets/index-CLaf7Iio.js",
+                    "assets/index-BMTqiGKw.js",
                     "assets/index-CPuA3Y3i.css"
                 };
 

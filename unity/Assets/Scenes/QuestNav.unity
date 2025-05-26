@@ -673,7 +673,7 @@ MonoBehaviour:
   heartbeatManager: {fileID: 336173543}
   commandProcessor: {fileID: 336173542}
   uiManager: {fileID: 336173541}
-  webInterface: {fileID: 0}
+  webInterface: {fileID: 1375737372}
 --- !u!1 &336191857
 GameObject:
   m_ObjectHideFlags: 0
@@ -2128,6 +2128,11 @@ Transform:
   m_Children: []
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!1 &1375737368 stripped
+GameObject:
+  m_CorrespondingSourceObject: {fileID: 1000000, guid: 81356de8c6ad42dc964b4e279730dffb, type: 3}
+  m_PrefabInstance: {fileID: 1847938699}
+  m_PrefabAsset: {fileID: 0}
 --- !u!224 &1375737369
 RectTransform:
   m_ObjectHideFlags: 0
@@ -2246,6 +2251,34 @@ CanvasRenderer:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 94296698}
   m_CullTransparentMesh: 1
+--- !u!114 &1375737372 stripped
+MonoBehaviour:
+  m_CorrespondingSourceObject: {fileID: 114000000, guid: 81356de8c6ad42dc964b4e279730dffb, type: 3}
+  m_PrefabInstance: {fileID: 1847938699}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1375737368}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 81356de8c6ad42dc964b4e279730dfee, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+--- !u!114 &1375737374
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1375737368}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 8a9b0c1d2e3f4a5b6c7d8e9f0a1b2c3d, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  targetFrameRate: 15
+  jpegQuality: 75
+  maxFrameBufferSize: 5
+  captureWidth: 640
+  captureHeight: 480
 --- !u!1 &1420589302
 GameObject:
   m_ObjectHideFlags: 0
@@ -2567,13 +2600,20 @@ PrefabInstance:
       value: 0
       objectReference: {fileID: 0}
     - target: {fileID: 114000000, guid: 81356de8c6ad42dc964b4e279730dffb, type: 3}
+      propertyPath: cameraStreamer
+      value: 
+      objectReference: {fileID: 1375737374}
+    - target: {fileID: 114000000, guid: 81356de8c6ad42dc964b4e279730dffb, type: 3}
       propertyPath: networkConnection
       value: 
       objectReference: {fileID: 336173544}
     m_RemovedComponents: []
     m_RemovedGameObjects: []
     m_AddedGameObjects: []
-    m_AddedComponents: []
+    m_AddedComponents:
+    - targetCorrespondingSourceObject: {fileID: 1000000, guid: 81356de8c6ad42dc964b4e279730dffb, type: 3}
+      insertIndex: -1
+      addedObject: {fileID: 1375737374}
   m_SourcePrefab: {fileID: 100100000, guid: 81356de8c6ad42dc964b4e279730dffb, type: 3}
 --- !u!1 &1922607207
 GameObject:

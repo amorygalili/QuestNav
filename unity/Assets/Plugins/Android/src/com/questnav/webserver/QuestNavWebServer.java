@@ -8,6 +8,7 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Base64;
 
 import com.questnav.unity.UnityBridge;
 
@@ -108,6 +109,10 @@ public class QuestNavWebServer extends NanoHTTPD {
         if (method.equalsIgnoreCase("GET")) {
             if (uri.equals("/api/status")) {
                 return handleStatusRequest();
+            } else if (uri.equals("/api/camera/stream")) {
+                return handleCameraStream();
+            } else if (uri.equals("/api/camera/frame")) {
+                return handleCameraFrame();
             }
         }
 
@@ -122,6 +127,10 @@ public class QuestNavWebServer extends NanoHTTPD {
                     return handleTeamNumberUpdate(postData);
                 } else if (uri.equals("/api/sim")) {
                     return handleConnectToSim();
+                } else if (uri.equals("/api/camera/start")) {
+                    return handleStartCameraStreaming();
+                } else if (uri.equals("/api/camera/stop")) {
+                    return handleStopCameraStreaming();
                 }
             } catch (IOException | ResponseException e) {
                 System.err.println(TAG + ": Error parsing POST data: " + e.getMessage());
@@ -314,5 +323,194 @@ public class QuestNavWebServer extends NanoHTTPD {
         if (uri.endsWith(".svg")) return "image/svg+xml";
         if (uri.endsWith(".ico")) return "image/x-icon";
         return "application/octet-stream";
+    }
+
+    /**
+     * Handle camera stream request (MJPEG streaming)
+     */
+    private Response handleCameraStream() {
+        System.out.println("[QuestNav] Camera stream requested");
+
+        try {
+            // Start camera streaming in Unity
+            UnityBridge.sendMessage("QuestNavWebInterface", "StartCameraStreaming", "");
+
+            // Create MJPEG stream response
+            return new Response(Response.Status.OK, "multipart/x-mixed-replace; boundary=frame",
+                new CameraStreamInputStream());
+        } catch (Exception e) {
+            System.err.println("[QuestNav] Error starting camera stream: " + e.getMessage());
+            return new Response(Response.Status.INTERNAL_ERROR, "application/json",
+                "{\"error\": \"Failed to start camera stream\"}");
+        }
+    }
+
+    /**
+     * Handle single camera frame request
+     */
+    private Response handleCameraFrame() {
+        System.out.println("[QuestNav] Single camera frame requested");
+
+        try {
+            // Get latest frame from Unity
+            byte[] frameData = getLatestCameraFrame();
+
+            if (frameData != null && frameData.length > 0) {
+                return new Response(Response.Status.OK, "image/jpeg",
+                    new ByteArrayInputStream(frameData));
+            } else {
+                return new Response(Response.Status.NO_CONTENT, "application/json",
+                    "{\"error\": \"No frame available\"}");
+            }
+        } catch (Exception e) {
+            System.err.println("[QuestNav] Error getting camera frame: " + e.getMessage());
+            return new Response(Response.Status.INTERNAL_ERROR, "application/json",
+                "{\"error\": \"Failed to get camera frame\"}");
+        }
+    }
+
+    /**
+     * Handle start camera streaming request
+     */
+    private Response handleStartCameraStreaming() {
+        System.out.println("[QuestNav] Start camera streaming requested");
+
+        try {
+            UnityBridge.sendMessage("QuestNavWebInterface", "StartCameraStreaming", "");
+            return new Response(Response.Status.OK, "application/json",
+                "{\"success\": true}");
+        } catch (Exception e) {
+            System.err.println("[QuestNav] Error starting camera streaming: " + e.getMessage());
+            return new Response(Response.Status.INTERNAL_ERROR, "application/json",
+                "{\"error\": \"Failed to start camera streaming\"}");
+        }
+    }
+
+    /**
+     * Handle stop camera streaming request
+     */
+    private Response handleStopCameraStreaming() {
+        System.out.println("[QuestNav] Stop camera streaming requested");
+
+        try {
+            UnityBridge.sendMessage("QuestNavWebInterface", "StopCameraStreaming", "");
+            return new Response(Response.Status.OK, "application/json",
+                "{\"success\": true}");
+        } catch (Exception e) {
+            System.err.println("[QuestNav] Error stopping camera streaming: " + e.getMessage());
+            return new Response(Response.Status.INTERNAL_ERROR, "application/json",
+                "{\"error\": \"Failed to stop camera streaming\"}");
+        }
+    }
+
+    // Static field to store the latest camera frame from Unity
+    private static byte[] latestCameraFrame = null;
+    private static final Object cameraFrameLock = new Object();
+
+    /**
+     * Get latest camera frame from Unity
+     */
+    private byte[] getLatestCameraFrame() {
+        synchronized (cameraFrameLock) {
+            return latestCameraFrame;
+        }
+    }
+
+    /**
+     * Called from Unity to update the latest camera frame
+     * This method is called via UnitySendMessage from the Unity side
+     */
+    public static void updateCameraFrame(byte[] frameData) {
+        System.out.println("[QuestNav] Received camera frame from Unity: " +
+                          (frameData != null ? frameData.length + " bytes" : "null"));
+
+        synchronized (cameraFrameLock) {
+            latestCameraFrame = frameData;
+        }
+    }
+
+    /**
+     * Called from Unity to update the latest camera frame (string version for UnitySendMessage)
+     * Unity will call this method with base64 encoded frame data
+     */
+    public static void updateCameraFrameBase64(String base64Data) {
+        try {
+            if (base64Data != null && !base64Data.isEmpty()) {
+                byte[] frameData = Base64.getDecoder().decode(base64Data);
+                updateCameraFrame(frameData);
+            } else {
+                System.out.println("[QuestNav] Received empty camera frame data from Unity");
+                updateCameraFrame(null);
+            }
+        } catch (Exception e) {
+            System.err.println("[QuestNav] Error decoding base64 camera frame: " + e.getMessage());
+            updateCameraFrame(null);
+        }
+    }
+
+    /**
+     * Inner class for MJPEG streaming
+     */
+    private class CameraStreamInputStream extends InputStream {
+        private boolean isStreaming = true;
+        private byte[] currentFrame = null;
+        private int framePosition = 0;
+        private boolean headerSent = false;
+
+        @Override
+        public int read() throws IOException {
+            if (!isStreaming) {
+                return -1; // End of stream
+            }
+
+            // Send MJPEG frame header if needed
+            if (!headerSent || (currentFrame != null && framePosition >= currentFrame.length)) {
+                getNextFrame();
+            }
+
+            if (currentFrame != null && framePosition < currentFrame.length) {
+                return currentFrame[framePosition++] & 0xFF;
+            }
+
+            return -1;
+        }
+
+        private void getNextFrame() {
+            try {
+                // Get next frame from Unity
+                byte[] frameData = getLatestCameraFrame();
+
+                if (frameData != null && frameData.length > 0) {
+                    // Create MJPEG frame with boundary
+                    String header = "\r\n--frame\r\nContent-Type: image/jpeg\r\nContent-Length: " +
+                                  frameData.length + "\r\n\r\n";
+                    byte[] headerBytes = header.getBytes();
+
+                    currentFrame = new byte[headerBytes.length + frameData.length];
+                    System.arraycopy(headerBytes, 0, currentFrame, 0, headerBytes.length);
+                    System.arraycopy(frameData, 0, currentFrame, headerBytes.length, frameData.length);
+
+                    framePosition = 0;
+                    headerSent = true;
+                } else {
+                    // No frame available, wait a bit
+                    try {
+                        Thread.sleep(33); // ~30 FPS
+                    } catch (InterruptedException e) {
+                        Thread.currentThread().interrupt();
+                        isStreaming = false;
+                    }
+                }
+            } catch (Exception e) {
+                System.err.println("[QuestNav] Error in camera stream: " + e.getMessage());
+                isStreaming = false;
+            }
+        }
+
+        @Override
+        public void close() throws IOException {
+            isStreaming = false;
+            super.close();
+        }
     }
 }

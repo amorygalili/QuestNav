@@ -8,6 +8,8 @@ This is a web-based interface for the QuestNav application. It allows you to con
 - Connect to simulation
 - View connection status
 - View device information and debug data
+- Stream Quest 3 passthrough cameras via MJPEG
+- Start/stop camera streaming controls
 
 ## Development
 
@@ -71,3 +73,7 @@ The web interface communicates with the QuestNav app through the following API e
 - `GET /api/status` - Get the current status of the QuestNav app
 - `POST /api/team` - Update the team number
 - `POST /api/sim` - Connect to simulation
+- `GET /api/camera/stream` - MJPEG stream of Quest 3 passthrough cameras
+- `GET /api/camera/frame` - Single JPEG frame from Quest 3 cameras
+- `POST /api/camera/start` - Start camera streaming
+- `POST /api/camera/stop` - Stop camera streaming

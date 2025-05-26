@@ -73,6 +73,8 @@ function App() {
   const [error, setError] = useState<string | null>(null);
   const [teamNumber, setTeamNumber] = useState<string>('');
   const [updateSuccess, setUpdateSuccess] = useState<boolean>(false);
+  const [cameraStreaming, setCameraStreaming] = useState<boolean>(false);
+  const [cameraError, setCameraError] = useState<string | null>(null);
 
   // Fetch status on component mount and every 2 seconds
   useEffect(() => {
@@ -123,6 +125,30 @@ function App() {
     }
   };
 
+  // Handle start camera streaming
+  const handleStartCameraStreaming = async () => {
+    try {
+      await axios.post('/api/camera/start');
+      setCameraStreaming(true);
+      setCameraError(null);
+    } catch (err) {
+      setCameraError('Failed to start camera streaming');
+      setTimeout(() => setCameraError(null), 3000);
+    }
+  };
+
+  // Handle stop camera streaming
+  const handleStopCameraStreaming = async () => {
+    try {
+      await axios.post('/api/camera/stop');
+      setCameraStreaming(false);
+      setCameraError(null);
+    } catch (err) {
+      setCameraError('Failed to stop camera streaming');
+      setTimeout(() => setCameraError(null), 3000);
+    }
+  };
+
   return (
     <ThemeProvider theme={darkTheme}>
       <CssBaseline />
@@ -142,6 +168,10 @@ function App() {
             <>
               {updateSuccess && (
                 <Alert severity="success" sx={{ my: 2 }}>Update successful!</Alert>
+              )}
+
+              {cameraError && (
+                <Alert severity="error" sx={{ my: 2 }}>{cameraError}</Alert>
               )}
 
               <Paper sx={{ p: 3, mb: 3 }}>
@@ -178,6 +208,61 @@ function App() {
                       Connect to Sim
                     </Button>
                   </Grid>
+                </Grid>
+              </Paper>
+
+              <Paper sx={{ p: 3, mb: 3 }}>
+                <Typography variant="h2" component="h2" gutterBottom>
+                  Camera Stream
+                </Typography>
+                <Grid container spacing={2} alignItems="center">
+                  <Grid item xs={12} md={6}>
+                    <Typography variant="body1" gutterBottom>
+                      Stream Quest 3 passthrough cameras to monitor the robot's environment
+                    </Typography>
+                  </Grid>
+                  <Grid item xs={6} md={3}>
+                    <Button
+                      variant="contained"
+                      color="primary"
+                      fullWidth
+                      onClick={handleStartCameraStreaming}
+                      disabled={cameraStreaming}
+                    >
+                      Start Stream
+                    </Button>
+                  </Grid>
+                  <Grid item xs={6} md={3}>
+                    <Button
+                      variant="contained"
+                      color="secondary"
+                      fullWidth
+                      onClick={handleStopCameraStreaming}
+                      disabled={!cameraStreaming}
+                    >
+                      Stop Stream
+                    </Button>
+                  </Grid>
+                  {cameraStreaming && (
+                    <Grid item xs={12}>
+                      <Box sx={{ mt: 2, textAlign: 'center' }}>
+                        <img
+                          src="/api/camera/stream"
+                          alt="Quest 3 Camera Stream"
+                          style={{
+                            maxWidth: '100%',
+                            height: 'auto',
+                            border: '1px solid #444',
+                            borderRadius: '8px'
+                          }}
+                          onError={() => {
+                            setCameraError('Failed to load camera stream');
+                            setCameraStreaming(false);
+                          }}
+                        />
+                      </Box>
+                    </Grid>
+                  )}
                 </Grid>
               </Paper>
 
