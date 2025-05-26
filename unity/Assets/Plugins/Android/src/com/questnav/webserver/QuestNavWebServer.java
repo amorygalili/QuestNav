@@ -113,6 +113,8 @@ public class QuestNavWebServer extends NanoHTTPD {
                 return handleCameraStream();
             } else if (uri.equals("/api/camera/frame")) {
                 return handleCameraFrame();
+            } else if (uri.equals("/api/camera/settings")) {
+                return handleGetCameraSettings();
             }
         }
 
@@ -131,6 +133,10 @@ public class QuestNavWebServer extends NanoHTTPD {
                     return handleStartCameraStreaming();
                 } else if (uri.equals("/api/camera/stop")) {
                     return handleStopCameraStreaming();
+                } else if (uri.equals("/api/camera/settings")) {
+                    return handleUpdateCameraSettings(postData);
+                } else if (uri.equals("/api/camera/reset")) {
+                    return handleResetCameraStats();
                 }
             } catch (IOException | ResponseException e) {
                 System.err.println(TAG + ": Error parsing POST data: " + e.getMessage());
@@ -403,9 +409,86 @@ public class QuestNavWebServer extends NanoHTTPD {
         }
     }
 
+    /**
+     * Handle get camera settings request
+     */
+    private Response handleGetCameraSettings() {
+        System.out.println("[QuestNav] Get camera settings requested");
+
+        try {
+            // Request camera settings from Unity
+            System.out.println("[QuestNav] Sending GetCameraSettings message to Unity");
+            UnityBridge.sendMessage("QuestNavWebInterface", "GetCameraSettings", "");
+
+            // Wait a moment for Unity to respond
+            try {
+                Thread.sleep(100); // Give Unity time to respond
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            }
+
+            // Return cached settings
+            synchronized (cameraSettingsLock) {
+                System.out.println("[QuestNav] Returning camera settings: " + latestCameraSettings);
+                return new Response(Response.Status.OK, "application/json", latestCameraSettings);
+            }
+        } catch (Exception e) {
+            System.err.println("[QuestNav] Error getting camera settings: " + e.getMessage());
+            return new Response(Response.Status.INTERNAL_ERROR, "application/json",
+                "{\"error\": \"Failed to get camera settings\"}");
+        }
+    }
+
+    /**
+     * Handle update camera settings request
+     */
+    private Response handleUpdateCameraSettings(String postData) {
+        System.out.println("[QuestNav] Update camera settings requested");
+
+        try {
+            if (postData != null && !postData.isEmpty()) {
+                // Send settings to Unity
+                UnityBridge.sendMessage("QuestNavWebInterface", "UpdateCameraSettings", postData);
+
+                return new Response(Response.Status.OK, "application/json",
+                    "{\"success\": true, \"message\": \"Camera settings updated\"}");
+            } else {
+                return new Response(Response.Status.BAD_REQUEST, "application/json",
+                    "{\"error\": \"No settings data provided\"}");
+            }
+        } catch (Exception e) {
+            System.err.println("[QuestNav] Error updating camera settings: " + e.getMessage());
+            return new Response(Response.Status.INTERNAL_ERROR, "application/json",
+                "{\"error\": \"Failed to update camera settings\"}");
+        }
+    }
+
+    /**
+     * Handle reset camera stats request
+     */
+    private Response handleResetCameraStats() {
+        System.out.println("[QuestNav] Reset camera stats requested");
+
+        try {
+            // Reset camera stats in Unity
+            UnityBridge.sendMessage("QuestNavWebInterface", "ResetCameraStats", "");
+
+            return new Response(Response.Status.OK, "application/json",
+                "{\"success\": true, \"message\": \"Camera stats reset\"}");
+        } catch (Exception e) {
+            System.err.println("[QuestNav] Error resetting camera stats: " + e.getMessage());
+            return new Response(Response.Status.INTERNAL_ERROR, "application/json",
+                "{\"error\": \"Failed to reset camera stats\"}");
+        }
+    }
+
     // Static field to store the latest camera frame from Unity
     private static byte[] latestCameraFrame = null;
     private static final Object cameraFrameLock = new Object();
+
+    // Static field to store camera settings from Unity
+    private static String latestCameraSettings = "{}";
+    private static final Object cameraSettingsLock = new Object();
 
     /**
      * Get latest camera frame from Unity
@@ -445,6 +528,29 @@ public class QuestNavWebServer extends NanoHTTPD {
         } catch (Exception e) {
             System.err.println("[QuestNav] Error decoding base64 camera frame: " + e.getMessage());
             updateCameraFrame(null);
+        }
+    }
+
+    /**
+     * Called from Unity to update the latest camera frame (direct byte array version - optimized)
+     * This method avoids base64 encoding overhead for better performance
+     */
+    public static void updateCameraFrameDirect(byte[] frameData) {
+        System.out.println("[QuestNav] Received camera frame from Unity (direct): " +
+                          (frameData != null ? frameData.length + " bytes" : "null"));
+        updateCameraFrame(frameData);
+    }
+
+    /**
+     * Called from Unity to update camera settings
+     * This method is called via UnitySendMessage from the Unity side
+     */
+    public static void updateCameraSettings(String settingsJson) {
+        System.out.println("[QuestNav] Received camera settings from Unity: " +
+                          (settingsJson != null ? settingsJson.length() + " chars" : "null"));
+
+        synchronized (cameraSettingsLock) {
+            latestCameraSettings = settingsJson != null ? settingsJson : "{}";
         }
     }
 
@@ -493,9 +599,9 @@ public class QuestNavWebServer extends NanoHTTPD {
                     framePosition = 0;
                     headerSent = true;
                 } else {
-                    // No frame available, wait a bit
+                    // No frame available, wait adaptively (shorter wait for better responsiveness)
                     try {
-                        Thread.sleep(33); // ~30 FPS
+                        Thread.sleep(16); // ~60 FPS polling for better responsiveness
                     } catch (InterruptedException e) {
                         Thread.currentThread().interrupt();
                         isStreaming = false;

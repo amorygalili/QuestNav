@@ -243,6 +243,218 @@ namespace QuestNav.Web
             }
             return false;
         }
+
+        /// <summary>
+        /// Get camera optimization settings (called from Java)
+        /// This is called from the Java code via UnitySendMessage
+        /// </summary>
+        public void GetCameraSettings(string message)
+        {
+            Debug.Log("[QuestNavWebInterface] GetCameraSettings called");
+
+            // Try to find camera streamer if not assigned
+            if (cameraStreamer == null)
+            {
+                Debug.Log("[QuestNavWebInterface] Camera streamer is null, trying to find it");
+                cameraStreamer = FindObjectOfType<PassthroughCameraStreamer>();
+
+                if (cameraStreamer == null)
+                {
+                    Debug.LogError("[QuestNavWebInterface] Could not find PassthroughCameraStreamer in scene");
+                }
+                else
+                {
+                    Debug.Log("[QuestNavWebInterface] Found PassthroughCameraStreamer");
+                }
+            }
+
+            string settingsJson = GetCameraSettingsJson();
+            Debug.Log($"[QuestNavWebInterface] Camera settings JSON: {settingsJson}");
+
+            // Send settings to Java web server
+            try
+            {
+                using (AndroidJavaClass webServerClass = new AndroidJavaClass("com.questnav.webserver.QuestNavWebServer"))
+                {
+                    webServerClass.CallStatic("updateCameraSettings", settingsJson);
+                }
+                Debug.Log("[QuestNavWebInterface] Successfully sent camera settings to Java");
+            }
+            catch (System.Exception ex)
+            {
+                Debug.LogError($"[QuestNavWebInterface] Error sending camera settings to Java: {ex.Message}");
+            }
+        }
+
+        /// <summary>
+        /// Get camera optimization settings as JSON string
+        /// </summary>
+        public string GetCameraSettingsJson()
+        {
+            Debug.Log("[QuestNavWebInterface] GetCameraSettingsJson called");
+
+            if (cameraStreamer != null)
+            {
+                Debug.Log("[QuestNavWebInterface] Camera streamer found, getting settings");
+                try
+                {
+                    var stats = cameraStreamer.GetPerformanceStats();
+                    var optimizationSettings = GetCameraOptimizationSettings();
+
+                    var cameraResponse = new CameraResponse
+                    {
+                        isStreaming = cameraStreamer.IsStreaming,
+                        performance = new PerformanceData
+                        {
+                            avgProcessingTime = stats.avgProcessingTime,
+                            frameCount = stats.frameCount,
+                            skippedFrames = stats.skippedFrames,
+                            currentQuality = stats.currentQuality,
+                            currentScale = stats.currentScale
+                        },
+                        settings = optimizationSettings
+                    };
+
+                    string json = JsonUtility.ToJson(cameraResponse);
+                    Debug.Log($"[QuestNavWebInterface] Generated camera settings JSON: {json}");
+                    return json;
+                }
+                catch (System.Exception ex)
+                {
+                    Debug.LogError($"[QuestNavWebInterface] Error getting camera settings: {ex.Message}");
+                    return GetDefaultCameraSettings();
+                }
+            }
+            else
+            {
+                Debug.LogWarning("[QuestNavWebInterface] Camera streamer is null, returning default settings");
+                return GetDefaultCameraSettings();
+            }
+        }
+
+        /// <summary>
+        /// Get default camera settings when camera streamer is not available
+        /// </summary>
+        private string GetDefaultCameraSettings()
+        {
+            var defaultResponse = new CameraResponse
+            {
+                isStreaming = false,
+                performance = new PerformanceData
+                {
+                    avgProcessingTime = 0.0f,
+                    frameCount = 0,
+                    skippedFrames = 0,
+                    currentQuality = 75,
+                    currentScale = 1.0f
+                },
+                settings = new CameraSettingsData()
+                {
+                    enableOptimizations = true,
+                    enableAdaptiveQuality = true,
+                    minJpegQuality = 30,
+                    maxJpegQuality = 90,
+                    enableFrameSkipping = true,
+                    maxProcessingTimeMs = 33.0f,
+                    enableAsyncEncoding = true,
+                    enableTextureReuse = true,
+                    enableROICropping = false,
+                    enableResolutionScaling = false,
+                    lowBandwidthScale = 0.5f,
+                    roiX = 0.25f,
+                    roiY = 0.25f,
+                    roiWidth = 0.5f,
+                    roiHeight = 0.5f
+                }
+            };
+
+            string json = JsonUtility.ToJson(defaultResponse);
+            Debug.Log($"[QuestNavWebInterface] Using default camera settings: {json}");
+            return json;
+        }
+
+        /// <summary>
+        /// Update camera optimization settings
+        /// </summary>
+        public void UpdateCameraSettings(string settingsJson)
+        {
+            if (cameraStreamer == null) return;
+
+            try
+            {
+                var settings = JsonUtility.FromJson<CameraSettingsData>(settingsJson);
+
+                // Apply settings
+                cameraStreamer.SetAdaptiveQuality(settings.enableAdaptiveQuality, settings.minJpegQuality, settings.maxJpegQuality);
+                cameraStreamer.SetResolutionScaling(settings.enableResolutionScaling, settings.lowBandwidthScale);
+                cameraStreamer.SetROICropping(settings.enableROICropping, new Rect(settings.roiX, settings.roiY, settings.roiWidth, settings.roiHeight));
+
+                // Use reflection to set private fields
+                var streamerType = cameraStreamer.GetType();
+                SetPrivateField(streamerType, "enableOptimizations", settings.enableOptimizations);
+                SetPrivateField(streamerType, "enableFrameSkipping", settings.enableFrameSkipping);
+                SetPrivateField(streamerType, "enableAsyncEncoding", settings.enableAsyncEncoding);
+                SetPrivateField(streamerType, "enableTextureReuse", settings.enableTextureReuse);
+                SetPrivateField(streamerType, "maxProcessingTimeMs", settings.maxProcessingTimeMs);
+
+                Debug.Log($"[QuestNav] Camera settings updated: Quality={settings.enableAdaptiveQuality}, Async={settings.enableAsyncEncoding}");
+            }
+            catch (System.Exception ex)
+            {
+                Debug.LogError($"[QuestNav] Error updating camera settings: {ex.Message}");
+            }
+        }
+
+        /// <summary>
+        /// Reset camera performance statistics
+        /// This is called from the Java code via UnitySendMessage
+        /// </summary>
+        public void ResetCameraStats(string message)
+        {
+            cameraStreamer?.ResetPerformanceStats();
+            Debug.Log("[QuestNav] Camera performance stats reset");
+        }
+
+        private CameraSettingsData GetCameraOptimizationSettings()
+        {
+            if (cameraStreamer == null) return new CameraSettingsData();
+
+            var streamerType = cameraStreamer.GetType();
+            return new CameraSettingsData
+            {
+                enableOptimizations = GetPrivateField<bool>(streamerType, "enableOptimizations"),
+                enableAdaptiveQuality = GetPrivateField<bool>(streamerType, "enableAdaptiveQuality"),
+                minJpegQuality = GetPrivateField<int>(streamerType, "minJpegQuality"),
+                maxJpegQuality = GetPrivateField<int>(streamerType, "maxJpegQuality"),
+                enableFrameSkipping = GetPrivateField<bool>(streamerType, "enableFrameSkipping"),
+                maxProcessingTimeMs = GetPrivateField<float>(streamerType, "maxProcessingTimeMs"),
+                enableAsyncEncoding = GetPrivateField<bool>(streamerType, "enableAsyncEncoding"),
+                enableTextureReuse = GetPrivateField<bool>(streamerType, "enableTextureReuse"),
+                enableROICropping = GetPrivateField<bool>(streamerType, "enableROICropping"),
+                enableResolutionScaling = GetPrivateField<bool>(streamerType, "enableResolutionScaling"),
+                lowBandwidthScale = GetPrivateField<float>(streamerType, "lowBandwidthScale"),
+                roiX = GetPrivateField<Rect>(streamerType, "roiRect").x,
+                roiY = GetPrivateField<Rect>(streamerType, "roiRect").y,
+                roiWidth = GetPrivateField<Rect>(streamerType, "roiRect").width,
+                roiHeight = GetPrivateField<Rect>(streamerType, "roiRect").height
+            };
+        }
+
+        private T GetPrivateField<T>(System.Type type, string fieldName)
+        {
+            var field = type.GetField(fieldName, System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+            if (field != null)
+            {
+                return (T)field.GetValue(cameraStreamer);
+            }
+            return default(T);
+        }
+
+        private void SetPrivateField(System.Type type, string fieldName, object value)
+        {
+            var field = type.GetField(fieldName, System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+            field?.SetValue(cameraStreamer, value);
+        }
         #endregion
 
         #region Private Methods
@@ -303,7 +515,7 @@ namespace QuestNav.Web
                     "index.html",
                     "favicon.svg",
                     "vite.svg",
-                    "assets/index-BMTqiGKw.js",
+                    "assets/index-DXs7gu7z.js",
                     "assets/index-CPuA3Y3i.css"
                 };
 
@@ -483,5 +695,52 @@ namespace QuestNav.Web
             }
         }
         #endregion
+    }
+
+    /// <summary>
+    /// Data structure for camera optimization settings
+    /// </summary>
+    [System.Serializable]
+    public class CameraSettingsData
+    {
+        public bool enableOptimizations = false; // Disabled by default for safety
+        public bool enableAdaptiveQuality = true;
+        public int minJpegQuality = 30;
+        public int maxJpegQuality = 90;
+        public bool enableFrameSkipping = true;
+        public float maxProcessingTimeMs = 33.0f;
+        public bool enableAsyncEncoding = false; // Disabled by default for safety
+        public bool enableTextureReuse = false; // Disabled by default for safety
+        public bool enableROICropping = false;
+        public bool enableResolutionScaling = false;
+        public float lowBandwidthScale = 0.5f;
+        public float roiX = 0.25f;
+        public float roiY = 0.25f;
+        public float roiWidth = 0.5f;
+        public float roiHeight = 0.5f;
+    }
+
+    /// <summary>
+    /// Data structure for camera performance statistics
+    /// </summary>
+    [System.Serializable]
+    public class PerformanceData
+    {
+        public float avgProcessingTime;
+        public int frameCount;
+        public int skippedFrames;
+        public int currentQuality;
+        public float currentScale;
+    }
+
+    /// <summary>
+    /// Data structure for complete camera response
+    /// </summary>
+    [System.Serializable]
+    public class CameraResponse
+    {
+        public bool isStreaming;
+        public PerformanceData performance;
+        public CameraSettingsData settings;
     }
 }

@@ -1335,6 +1335,7 @@ GameObject:
   - component: {fileID: 773508531}
   - component: {fileID: 773508530}
   - component: {fileID: 773508529}
+  - component: {fileID: 773508532}
   m_Layer: 5
   m_Name: Canvas
   m_TagString: Untagged
@@ -1616,6 +1617,27 @@ MonoBehaviour:
   _addNewPointsToFront: 0
   _forwardElement: {fileID: 0}
   _canvas: {fileID: 773508527}
+--- !u!114 &773508532
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 773508524}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: a2b9aa43d42c33c41b83d4447d0fc5b4, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  startButton: {fileID: 0}
+  stopButton: {fileID: 0}
+  statusText: {fileID: 0}
+  performanceText: {fileID: 0}
+  qualitySlider: {fileID: 0}
+  scaleSlider: {fileID: 0}
+  adaptiveQualityToggle: {fileID: 0}
+  roiToggle: {fileID: 0}
+  cameraStreamer: {fileID: 0}
 --- !u!1 &844328115
 GameObject:
   m_ObjectHideFlags: 0
@@ -2022,6 +2044,7 @@ GameObject:
   - component: {fileID: 1358488921}
   - component: {fileID: 1358488920}
   - component: {fileID: 1358488919}
+  - component: {fileID: 1358488922}
   m_Layer: 0
   m_Name: '[BuildingBlock] Passthrough'
   m_TagString: Untagged
@@ -2128,6 +2151,27 @@ Transform:
   m_Children: []
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!114 &1358488922
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1358488918}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: a2b9aa43d42c33c41b83d4447d0fc5b4, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  startButton: {fileID: 0}
+  stopButton: {fileID: 0}
+  statusText: {fileID: 0}
+  performanceText: {fileID: 0}
+  qualitySlider: {fileID: 0}
+  scaleSlider: {fileID: 0}
+  adaptiveQualityToggle: {fileID: 0}
+  roiToggle: {fileID: 0}
+  cameraStreamer: {fileID: 1375737374}
 --- !u!1 &1375737368 stripped
 GameObject:
   m_CorrespondingSourceObject: {fileID: 1000000, guid: 81356de8c6ad42dc964b4e279730dffb, type: 3}
@@ -2279,6 +2323,23 @@ MonoBehaviour:
   maxFrameBufferSize: 5
   captureWidth: 640
   captureHeight: 480
+  enableOptimizations: 1
+  enableAdaptiveQuality: 1
+  minJpegQuality: 30
+  maxJpegQuality: 90
+  enableFrameSkipping: 1
+  maxProcessingTimeMs: 16
+  enableAsyncEncoding: 1
+  enableTextureReuse: 1
+  enableROICropping: 0
+  roiRect:
+    serializedVersion: 2
+    x: 0.25
+    y: 0.25
+    width: 0.5
+    height: 0.5
+  enableResolutionScaling: 1
+  lowBandwidthScale: 0.5
 --- !u!1 &1420589302
 GameObject:
   m_ObjectHideFlags: 0

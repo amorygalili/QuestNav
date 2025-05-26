@@ -3,6 +3,8 @@ using System.Collections.Generic;
 using UnityEngine;
 using System.Collections;
 using System.Threading;
+using System.Threading.Tasks;
+using UnityEngine.Rendering;
 
 #if UNITY_ANDROID && !UNITY_EDITOR
 using UnityEngine.Android;
@@ -26,11 +28,28 @@ namespace QuestNav.Camera
         [Header("Camera Resolution")]
         [SerializeField] private int captureWidth = 640;
         [SerializeField] private int captureHeight = 480;
+
+        [Header("Performance Optimization")]
+        [SerializeField] private bool enableOptimizations = false; // Disabled by default for safety
+        [SerializeField] private bool enableAdaptiveQuality = true;
+        [SerializeField] private int minJpegQuality = 30;
+        [SerializeField] private int maxJpegQuality = 90;
+        [SerializeField] private bool enableFrameSkipping = true;
+        [SerializeField] private float maxProcessingTimeMs = 33.0f; // ~30fps budget (more realistic)
+        [SerializeField] private bool enableAsyncEncoding = false; // Disabled by default for safety
+        [SerializeField] private bool enableTextureReuse = false; // Disabled by default for safety
+
+        [Header("Bandwidth Optimization")]
+        [SerializeField] private bool enableROICropping = false;
+        [SerializeField] private Rect roiRect = new Rect(0.25f, 0.25f, 0.5f, 0.5f); // Center 50%
+        [SerializeField] private bool enableResolutionScaling = false; // Disabled by default for safety
+        [SerializeField] private float lowBandwidthScale = 0.5f;
         #endregion
 
         #region Private Fields
         private WebCamTexture webCamTexture;
         private Texture2D captureTexture;
+        private RenderTexture tempRenderTexture;
         private Queue<byte[]> frameBuffer;
         private bool isStreaming = false;
         private CancellationTokenSource cancellationTokenSource;
@@ -38,6 +57,21 @@ namespace QuestNav.Camera
         private byte[] latestFrame;
         private float lastCaptureTime;
         private float captureInterval;
+
+        // Performance tracking
+        private float averageProcessingTime = 0f;
+        private int frameCount = 0;
+        private int skippedFrames = 0;
+        private int currentQuality;
+        private float currentScale = 1.0f;
+
+        // Async processing
+        private bool isProcessingFrame = false;
+
+        // Texture reuse for performance
+        private Texture2D[] texturePool;
+        private int texturePoolIndex = 0;
+        private const int TEXTURE_POOL_SIZE = 3;
         #endregion
 
         #region Unity Lifecycle
@@ -46,6 +80,13 @@ namespace QuestNav.Camera
             InitializeCamera();
             frameBuffer = new Queue<byte[]>();
             captureInterval = 1.0f / targetFrameRate;
+            currentQuality = jpegQuality;
+
+            // Initialize texture pool for reuse
+            if (enableTextureReuse)
+            {
+                InitializeTexturePool();
+            }
 
             Debug.Log($"[QuestNav] PassthroughCameraStreamer initialized with {captureWidth}x{captureHeight} at {targetFrameRate}fps");
         }
@@ -54,7 +95,15 @@ namespace QuestNav.Camera
         {
             if (isStreaming && Time.time - lastCaptureTime >= captureInterval)
             {
-                StartCoroutine(CaptureFrameCoroutine());
+                // Skip frame if still processing previous frame and frame skipping is enabled
+                if (enableFrameSkipping && isProcessingFrame)
+                {
+                    skippedFrames++;
+                    Debug.Log($"[QuestNav] Skipped frame (processing overload). Total skipped: {skippedFrames}");
+                    return;
+                }
+
+                _ = CaptureFrameAsync();
                 lastCaptureTime = Time.time;
             }
         }
@@ -307,73 +356,271 @@ namespace QuestNav.Camera
         }
 
         /// <summary>
-        /// Capture a frame from Quest 3 passthrough camera
+        /// Capture a frame from Quest 3 passthrough camera (optimized async version)
         /// </summary>
-        private IEnumerator CaptureFrameCoroutine()
+        private async Task CaptureFrameAsync()
         {
-            if (!isStreaming || webCamTexture == null)
-                yield break;
+            if (!isStreaming || webCamTexture == null || isProcessingFrame)
+                return;
 
-            bool success = false;
-            byte[] jpegData = null;
+            isProcessingFrame = true;
+            var startTime = Time.realtimeSinceStartup;
 
             try
             {
                 if (webCamTexture.isPlaying && webCamTexture.didUpdateThisFrame)
                 {
-                    // Get pixels from WebCamTexture
-                    Color32[] pixels = webCamTexture.GetPixels32();
-
-                    // Create or resize capture texture if needed
-                    if (captureTexture.width != webCamTexture.width || captureTexture.height != webCamTexture.height)
+                    if (enableOptimizations)
                     {
-                        DestroyImmediate(captureTexture);
-                        captureTexture = new Texture2D(webCamTexture.width, webCamTexture.height, TextureFormat.RGB24, false);
+                        await ProcessFrameOptimized();
                     }
-
-                    captureTexture.SetPixels32(pixels);
-                    captureTexture.Apply();
-
-                    success = true;
+                    else
+                    {
+                        ProcessFrameSimple();
+                    }
                 }
             }
             catch (Exception ex)
             {
-                Debug.LogError($"[QuestNav] Error capturing passthrough camera frame: {ex.Message}");
+                Debug.LogError($"[QuestNav] Error in async frame capture: {ex.Message}");
+            }
+            finally
+            {
+                var processingTime = (Time.realtimeSinceStartup - startTime) * 1000f;
+                UpdatePerformanceMetrics(processingTime);
+                isProcessingFrame = false;
+            }
+        }
+
+        /// <summary>
+        /// Optimized frame processing with safer approach
+        /// </summary>
+        private async Task ProcessFrameOptimized()
+        {
+            // Get pixels from WebCamTexture (original working method)
+            Color32[] pixels = webCamTexture.GetPixels32();
+
+            // Calculate target dimensions with scaling
+            int targetWidth = Mathf.RoundToInt(webCamTexture.width * currentScale);
+            int targetHeight = Mathf.RoundToInt(webCamTexture.height * currentScale);
+
+            // Apply ROI cropping if enabled
+            Color32[] processedPixels = pixels;
+            int sourceWidth = webCamTexture.width;
+            int sourceHeight = webCamTexture.height;
+
+            if (enableROICropping)
+            {
+                // Extract ROI pixels
+                int roiX = Mathf.RoundToInt(roiRect.x * sourceWidth);
+                int roiY = Mathf.RoundToInt(roiRect.y * sourceHeight);
+                int roiWidth = Mathf.RoundToInt(roiRect.width * sourceWidth);
+                int roiHeight = Mathf.RoundToInt(roiRect.height * sourceHeight);
+
+                processedPixels = ExtractROI(pixels, sourceWidth, sourceHeight, roiX, roiY, roiWidth, roiHeight);
+                sourceWidth = roiWidth;
+                sourceHeight = roiHeight;
             }
 
-            if (success)
+            // Scale if needed
+            if (currentScale != 1.0f)
             {
-                try
+                processedPixels = await Task.Run(() => ScalePixels(processedPixels, sourceWidth, sourceHeight, targetWidth, targetHeight));
+                sourceWidth = targetWidth;
+                sourceHeight = targetHeight;
+            }
+
+            // Create or resize capture texture if needed
+            if (captureTexture == null ||
+                captureTexture.width != sourceWidth ||
+                captureTexture.height != sourceHeight)
+            {
+                if (captureTexture != null)
+                    DestroyImmediate(captureTexture);
+
+                captureTexture = new Texture2D(sourceWidth, sourceHeight, TextureFormat.RGB24, false);
+            }
+
+            // Set pixels and encode
+            captureTexture.SetPixels32(processedPixels);
+            captureTexture.Apply();
+
+            // Encode to JPEG with current quality
+            byte[] jpegData = captureTexture.EncodeToJPG(currentQuality);
+
+            if (jpegData != null && jpegData.Length > 0)
+            {
+                // Process frame data on background thread
+                await Task.Run(() =>
                 {
-                    // Encode to JPEG
-                    jpegData = captureTexture.EncodeToJPG(jpegQuality);
-
-                    if (jpegData != null && jpegData.Length > 0)
+                    lock (frameLock)
                     {
-                        lock (frameLock)
+                        // Update latest frame
+                        latestFrame = jpegData;
+
+                        // Add to buffer for streaming
+                        frameBuffer.Enqueue(jpegData);
+
+                        // Limit buffer size
+                        while (frameBuffer.Count > maxFrameBufferSize)
                         {
-                            // Update latest frame
-                            latestFrame = jpegData;
-
-                            // Add to buffer for streaming
-                            frameBuffer.Enqueue(jpegData);
-
-                            // Limit buffer size
-                            while (frameBuffer.Count > maxFrameBufferSize)
-                            {
-                                frameBuffer.Dequeue();
-                            }
+                            frameBuffer.Dequeue();
                         }
+                    }
+                });
 
-                        // Send frame to Java web server
-                        SendFrameToJava(jpegData);
+                // Send frame to Java web server (back on main thread)
+                SendFrameToJavaOptimized(jpegData);
+            }
+        }
+
+        /// <summary>
+        /// Extract Region of Interest from pixel array
+        /// </summary>
+        private Color32[] ExtractROI(Color32[] sourcePixels, int sourceWidth, int sourceHeight, int roiX, int roiY, int roiWidth, int roiHeight)
+        {
+            Color32[] roiPixels = new Color32[roiWidth * roiHeight];
+
+            for (int y = 0; y < roiHeight; y++)
+            {
+                for (int x = 0; x < roiWidth; x++)
+                {
+                    int sourceIndex = (roiY + y) * sourceWidth + (roiX + x);
+                    int roiIndex = y * roiWidth + x;
+
+                    if (sourceIndex >= 0 && sourceIndex < sourcePixels.Length)
+                    {
+                        roiPixels[roiIndex] = sourcePixels[sourceIndex];
                     }
                 }
-                catch (Exception ex)
+            }
+
+            return roiPixels;
+        }
+
+        /// <summary>
+        /// Simple bilinear scaling of pixel array
+        /// </summary>
+        private Color32[] ScalePixels(Color32[] sourcePixels, int sourceWidth, int sourceHeight, int targetWidth, int targetHeight)
+        {
+            Color32[] scaledPixels = new Color32[targetWidth * targetHeight];
+
+            float xRatio = (float)sourceWidth / targetWidth;
+            float yRatio = (float)sourceHeight / targetHeight;
+
+            for (int y = 0; y < targetHeight; y++)
+            {
+                for (int x = 0; x < targetWidth; x++)
                 {
-                    Debug.LogError($"[QuestNav] Error encoding frame to JPEG: {ex.Message}");
+                    int sourceX = Mathf.FloorToInt(x * xRatio);
+                    int sourceY = Mathf.FloorToInt(y * yRatio);
+
+                    sourceX = Mathf.Clamp(sourceX, 0, sourceWidth - 1);
+                    sourceY = Mathf.Clamp(sourceY, 0, sourceHeight - 1);
+
+                    int sourceIndex = sourceY * sourceWidth + sourceX;
+                    int targetIndex = y * targetWidth + x;
+
+                    scaledPixels[targetIndex] = sourcePixels[sourceIndex];
                 }
+            }
+
+            return scaledPixels;
+        }
+
+        /// <summary>
+        /// Simple frame processing (optimized for speed)
+        /// </summary>
+        private void ProcessFrameSimple()
+        {
+            try
+            {
+                // Get reusable texture
+                Texture2D workingTexture = GetWorkingTexture();
+
+                if (workingTexture == null)
+                {
+                    Debug.LogWarning("[QuestNav] No working texture available");
+                    return;
+                }
+
+                // Get pixels from WebCamTexture
+                Color32[] pixels = webCamTexture.GetPixels32();
+
+                // Set pixels and apply (this is the main bottleneck)
+                workingTexture.SetPixels32(pixels);
+                workingTexture.Apply(false); // false = don't generate mipmaps for speed
+
+                if (enableAsyncEncoding)
+                {
+                    // Encode asynchronously to avoid blocking main thread
+                    _ = EncodeAndSendAsync(workingTexture, pixels);
+                }
+                else
+                {
+                    // Synchronous encoding (original method)
+                    byte[] jpegData = workingTexture.EncodeToJPG(currentQuality);
+                    ProcessEncodedFrame(jpegData);
+                }
+            }
+            catch (Exception ex)
+            {
+                Debug.LogError($"[QuestNav] Error in simple frame processing: {ex.Message}");
+            }
+        }
+
+        /// <summary>
+        /// Asynchronous encoding to avoid blocking main thread
+        /// </summary>
+        private async Task EncodeAndSendAsync(Texture2D texture, Color32[] pixels)
+        {
+            try
+            {
+                // Create a copy of the texture data for background processing
+                byte[] jpegData = await Task.Run(() =>
+                {
+                    // Create temporary texture for encoding on background thread
+                    // Note: This approach may not work on all platforms due to Unity threading restrictions
+                    // Fallback to main thread encoding if needed
+                    return texture.EncodeToJPG(currentQuality);
+                });
+
+                // Process the encoded frame back on main thread
+                ProcessEncodedFrame(jpegData);
+            }
+            catch (Exception ex)
+            {
+                Debug.LogError($"[QuestNav] Error in async encoding: {ex.Message}");
+                // Fallback to synchronous encoding
+                byte[] jpegData = texture.EncodeToJPG(currentQuality);
+                ProcessEncodedFrame(jpegData);
+            }
+        }
+
+        /// <summary>
+        /// Process encoded frame data
+        /// </summary>
+        private void ProcessEncodedFrame(byte[] jpegData)
+        {
+            if (jpegData != null && jpegData.Length > 0)
+            {
+                lock (frameLock)
+                {
+                    // Update latest frame
+                    latestFrame = jpegData;
+
+                    // Add to buffer for streaming
+                    frameBuffer.Enqueue(jpegData);
+
+                    // Limit buffer size
+                    while (frameBuffer.Count > maxFrameBufferSize)
+                    {
+                        frameBuffer.Dequeue();
+                    }
+                }
+
+                // Send frame to Java web server (async to avoid blocking)
+                _ = Task.Run(() => SendFrameToJavaOptimized(jpegData));
             }
         }
 
@@ -485,27 +732,128 @@ namespace QuestNav.Camera
         }
 
         /// <summary>
-        /// Send camera frame to Java web server
+        /// Send camera frame to Java web server (optimized version)
         /// </summary>
-        private void SendFrameToJava(byte[] jpegData)
+        private void SendFrameToJavaOptimized(byte[] jpegData)
         {
             try
             {
-                // Convert byte array to base64 string for transmission to Java
-                string base64Data = System.Convert.ToBase64String(jpegData);
-
-                // Send to Java via AndroidJavaClass
+                // Try direct byte array transfer first (if supported)
                 using (AndroidJavaClass unityPlayer = new AndroidJavaClass("com.unity3d.player.UnityPlayer"))
                 using (AndroidJavaObject currentActivity = unityPlayer.GetStatic<AndroidJavaObject>("currentActivity"))
                 using (AndroidJavaClass webServerClass = new AndroidJavaClass("com.questnav.webserver.QuestNavWebServer"))
                 {
-                    webServerClass.CallStatic("updateCameraFrameBase64", base64Data);
+                    // Check if direct byte array method exists
+                    try
+                    {
+                        webServerClass.CallStatic("updateCameraFrameDirect", jpegData);
+                    }
+                    catch
+                    {
+                        // Fallback to base64 if direct method not available
+                        string base64Data = System.Convert.ToBase64String(jpegData);
+                        webServerClass.CallStatic("updateCameraFrameBase64", base64Data);
+                    }
                 }
             }
             catch (Exception ex)
             {
                 Debug.LogError($"[QuestNav] Error sending frame to Java: {ex.Message}");
             }
+        }
+
+        /// <summary>
+        /// Update performance metrics and adjust quality/resolution dynamically
+        /// </summary>
+        private void UpdatePerformanceMetrics(float processingTimeMs)
+        {
+            frameCount++;
+            averageProcessingTime = (averageProcessingTime * (frameCount - 1) + processingTimeMs) / frameCount;
+
+            // Adaptive quality adjustment
+            if (enableAdaptiveQuality && frameCount % 30 == 0) // Adjust every 30 frames
+            {
+                if (averageProcessingTime > maxProcessingTimeMs)
+                {
+                    // Performance is poor, reduce quality/resolution
+                    if (currentQuality > minJpegQuality)
+                    {
+                        currentQuality = Mathf.Max(minJpegQuality, currentQuality - 5);
+                        Debug.Log($"[QuestNav] Reduced JPEG quality to {currentQuality} (avg processing: {averageProcessingTime:F1}ms)");
+                    }
+                    else if (enableResolutionScaling && currentScale > lowBandwidthScale)
+                    {
+                        currentScale = Mathf.Max(lowBandwidthScale, currentScale - 0.1f);
+                        Debug.Log($"[QuestNav] Reduced resolution scale to {currentScale:F1} (avg processing: {averageProcessingTime:F1}ms)");
+                    }
+                }
+                else if (averageProcessingTime < maxProcessingTimeMs * 0.7f)
+                {
+                    // Performance is good, can increase quality/resolution
+                    if (currentScale < 1.0f)
+                    {
+                        currentScale = Mathf.Min(1.0f, currentScale + 0.1f);
+                        Debug.Log($"[QuestNav] Increased resolution scale to {currentScale:F1} (avg processing: {averageProcessingTime:F1}ms)");
+                    }
+                    else if (currentQuality < maxJpegQuality)
+                    {
+                        currentQuality = Mathf.Min(maxJpegQuality, currentQuality + 5);
+                        Debug.Log($"[QuestNav] Increased JPEG quality to {currentQuality} (avg processing: {averageProcessingTime:F1}ms)");
+                    }
+                }
+            }
+
+            // Log performance stats periodically
+            if (frameCount % 100 == 0)
+            {
+                Debug.Log($"[QuestNav] Performance: {averageProcessingTime:F1}ms avg, {skippedFrames} skipped frames, Quality: {currentQuality}, Scale: {currentScale:F1}");
+            }
+        }
+
+        /// <summary>
+        /// Initialize texture pool for reuse
+        /// </summary>
+        private void InitializeTexturePool()
+        {
+            texturePool = new Texture2D[TEXTURE_POOL_SIZE];
+            // Textures will be created on-demand with correct dimensions
+        }
+
+        /// <summary>
+        /// Get a working texture from the pool
+        /// </summary>
+        private Texture2D GetWorkingTexture()
+        {
+            if (!enableTextureReuse)
+            {
+                // Create new texture each time (original behavior)
+                if (captureTexture == null ||
+                    captureTexture.width != webCamTexture.width ||
+                    captureTexture.height != webCamTexture.height)
+                {
+                    if (captureTexture != null)
+                        DestroyImmediate(captureTexture);
+
+                    captureTexture = new Texture2D(webCamTexture.width, webCamTexture.height, TextureFormat.RGB24, false);
+                }
+                return captureTexture;
+            }
+
+            // Use texture pool
+            int currentIndex = texturePoolIndex;
+            texturePoolIndex = (texturePoolIndex + 1) % TEXTURE_POOL_SIZE;
+
+            if (texturePool[currentIndex] == null ||
+                texturePool[currentIndex].width != webCamTexture.width ||
+                texturePool[currentIndex].height != webCamTexture.height)
+            {
+                if (texturePool[currentIndex] != null)
+                    DestroyImmediate(texturePool[currentIndex]);
+
+                texturePool[currentIndex] = new Texture2D(webCamTexture.width, webCamTexture.height, TextureFormat.RGB24, false);
+            }
+
+            return texturePool[currentIndex];
         }
 
         /// <summary>
@@ -519,6 +867,26 @@ namespace QuestNav.Camera
                 captureTexture = null;
             }
 
+            if (tempRenderTexture != null)
+            {
+                tempRenderTexture.Release();
+                tempRenderTexture = null;
+            }
+
+            // Clean up texture pool
+            if (texturePool != null)
+            {
+                for (int i = 0; i < texturePool.Length; i++)
+                {
+                    if (texturePool[i] != null)
+                    {
+                        DestroyImmediate(texturePool[i]);
+                        texturePool[i] = null;
+                    }
+                }
+                texturePool = null;
+            }
+
             if (webCamTexture != null)
             {
                 if (webCamTexture.isPlaying)
@@ -527,6 +895,56 @@ namespace QuestNav.Camera
                 webCamTexture = null;
             }
         }
+
+        #region Public API Extensions
+        /// <summary>
+        /// Set adaptive quality parameters at runtime
+        /// </summary>
+        public void SetAdaptiveQuality(bool enabled, int minQuality = 30, int maxQuality = 90)
+        {
+            enableAdaptiveQuality = enabled;
+            minJpegQuality = minQuality;
+            maxJpegQuality = maxQuality;
+            currentQuality = Mathf.Clamp(currentQuality, minQuality, maxQuality);
+        }
+
+        /// <summary>
+        /// Set resolution scaling parameters at runtime
+        /// </summary>
+        public void SetResolutionScaling(bool enabled, float lowBandwidthScale = 0.5f)
+        {
+            enableResolutionScaling = enabled;
+            this.lowBandwidthScale = lowBandwidthScale;
+        }
+
+        /// <summary>
+        /// Set ROI cropping parameters at runtime
+        /// </summary>
+        public void SetROICropping(bool enabled, Rect roi = default)
+        {
+            enableROICropping = enabled;
+            if (roi != default)
+                roiRect = roi;
+        }
+
+        /// <summary>
+        /// Get current performance statistics
+        /// </summary>
+        public (float avgProcessingTime, int frameCount, int skippedFrames, int currentQuality, float currentScale) GetPerformanceStats()
+        {
+            return (averageProcessingTime, frameCount, skippedFrames, currentQuality, currentScale);
+        }
+
+        /// <summary>
+        /// Reset performance statistics
+        /// </summary>
+        public void ResetPerformanceStats()
+        {
+            averageProcessingTime = 0f;
+            frameCount = 0;
+            skippedFrames = 0;
+        }
+        #endregion
         #endregion
     }
 }

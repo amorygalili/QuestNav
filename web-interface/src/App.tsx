@@ -12,6 +12,7 @@ import CircularProgress from '@mui/material/CircularProgress';
 import Divider from '@mui/material/Divider';
 import Alert from '@mui/material/Alert';
 import axios from 'axios';
+import CameraSettings from './CameraSettings';
 import './App.css';
 
 // Define the theme
@@ -265,6 +266,8 @@ function App() {
                   )}
                 </Grid>
               </Paper>
+
+              <CameraSettings />
 
               <Paper sx={{ p: 3, mb: 3 }}>
                 <Typography variant="h2" component="h2" gutterBottom>
