@@ -12,7 +12,8 @@ namespace QuestNav.Camera
 {
     /// <summary>
     /// Captures and streams Quest 3 passthrough camera frames for web interface display.
-    /// Uses OVR SDK to access passthrough camera data and converts to JPEG for MJPEG streaming.
+    /// Uses Meta's Passthrough Camera API (Horizon OS v74+) to access real camera data and converts to JPEG for MJPEG streaming.
+    /// Requires horizonos.permission.HEADSET_CAMERA permission.
     /// </summary>
     public class PassthroughCameraStreamer : MonoBehaviour
     {
@@ -28,8 +29,7 @@ namespace QuestNav.Camera
         #endregion
 
         #region Private Fields
-        private UnityEngine.Camera passthroughCamera;
-        private RenderTexture renderTexture;
+        private WebCamTexture webCamTexture;
         private Texture2D captureTexture;
         private Queue<byte[]> frameBuffer;
         private bool isStreaming = false;
@@ -38,11 +38,6 @@ namespace QuestNav.Camera
         private byte[] latestFrame;
         private float lastCaptureTime;
         private float captureInterval;
-        private OVRPassthroughLayer passthroughLayer;
-        private OVRCameraRig cameraRig;
-        private WebCamTexture webCamTexture;
-        private bool useWebCam = false;
-        private bool useOVRCamera = false;
         #endregion
 
         #region Unity Lifecycle
@@ -130,8 +125,8 @@ namespace QuestNav.Camera
             yield return null;
 #endif
 
-            // Start streaming with whatever camera mode is available
-            if (useWebCam && webCamTexture != null)
+            // Start Quest 3 passthrough camera
+            if (webCamTexture != null)
             {
                 Debug.Log("[QuestNav] Starting Quest 3 passthrough camera");
                 webCamTexture.Play();
@@ -141,7 +136,7 @@ namespace QuestNav.Camera
             }
             else
             {
-                Debug.Log("[QuestNav] Using VR camera capture mode");
+                Debug.LogWarning("[QuestNav] No passthrough camera available - ensure permissions are granted");
             }
 
             isStreaming = true;
@@ -163,11 +158,11 @@ namespace QuestNav.Camera
             if (!isStreaming)
                 return;
 
-            Debug.Log("[QuestNav] Stopping camera streaming");
+            Debug.Log("[QuestNav] Stopping passthrough camera streaming");
 
-            if (useWebCam && webCamTexture != null)
+            if (webCamTexture != null)
             {
-                Debug.Log("[QuestNav] Stopping WebCamTexture");
+                Debug.Log("[QuestNav] Stopping Quest 3 passthrough camera");
                 webCamTexture.Stop();
             }
 
@@ -233,69 +228,24 @@ namespace QuestNav.Camera
 
         #region Private Methods
         /// <summary>
-        /// Initialize the camera setup - try WebCam first, fallback to VR camera
+        /// Initialize Quest 3 passthrough camera
         /// </summary>
         private void InitializeCamera()
         {
             try
             {
-                // First, try to access device cameras directly using WebCamTexture
-                if (TryInitializeWebCam())
-                {
-                    useWebCam = true;
-                    Debug.Log("[QuestNav] Using WebCamTexture for direct camera access");
-                    return;
-                }
-
-                // Second, try OVR camera access APIs
-                if (TryInitializeOVRCamera())
-                {
-                    useOVRCamera = true;
-                    Debug.Log("[QuestNav] Using OVR camera access APIs");
-                    return;
-                }
-
-                // Fallback to VR camera capture
-                Debug.Log("[QuestNav] No direct camera access available, falling back to VR camera capture");
-
-                // Find the OVR Camera Rig in the scene
-                cameraRig = FindObjectOfType<OVRCameraRig>();
-                if (cameraRig == null)
-                {
-                    Debug.LogError("[QuestNav] OVRCameraRig not found in scene");
-                    return;
-                }
-
-                // Get the main VR camera (center eye)
-                passthroughCamera = cameraRig.centerEyeAnchor.GetComponent<UnityEngine.Camera>();
-                if (passthroughCamera == null)
-                {
-                    Debug.LogError("[QuestNav] Center eye camera not found");
-                    return;
-                }
-
-                Debug.Log("[QuestNav] Using main VR camera for capture");
-
-                // Create render texture for capturing
-                renderTexture = new RenderTexture(captureWidth, captureHeight, 24);
-                renderTexture.format = RenderTextureFormat.ARGB32;
-                renderTexture.Create();
-
-                // Create texture for reading pixels
-                captureTexture = new Texture2D(captureWidth, captureHeight, TextureFormat.RGB24, false);
-
-                Debug.Log("[QuestNav] VR camera capture initialized successfully");
+                TryInitializePassthroughCamera();
             }
             catch (Exception ex)
             {
-                Debug.LogError($"[QuestNav] Failed to initialize camera capture: {ex.Message}");
+                Debug.LogError($"[QuestNav] Failed to initialize passthrough camera: {ex.Message}");
             }
         }
 
         /// <summary>
-        /// Try to initialize WebCamTexture for Quest 3 passthrough camera access
+        /// Initialize Quest 3 passthrough camera using WebCamTexture API
         /// </summary>
-        private bool TryInitializeWebCam()
+        private void TryInitializePassthroughCamera()
         {
             try
             {
@@ -343,169 +293,53 @@ namespace QuestNav.Camera
                     // Create texture for reading pixels
                     captureTexture = new Texture2D(optimalWidth, optimalHeight, TextureFormat.RGB24, false);
 
-                    Debug.Log($"[QuestNav] WebCamTexture created for Quest 3 passthrough: {selectedDevice} ({optimalWidth}x{optimalHeight} @ {optimalFPS}fps)");
-                    return true;
+                    Debug.Log($"[QuestNav] Quest 3 passthrough camera initialized: {selectedDevice} ({optimalWidth}x{optimalHeight} @ {optimalFPS}fps)");
                 }
-
-                Debug.LogWarning("[QuestNav] No camera devices found - ensure Horizon OS v74+ and HEADSET_CAMERA permission granted");
-                return false;
+                else
+                {
+                    Debug.LogWarning("[QuestNav] No camera devices found - ensure Horizon OS v74+ and HEADSET_CAMERA permission granted");
+                }
             }
             catch (Exception ex)
             {
                 Debug.LogError($"[QuestNav] Error initializing Quest 3 passthrough camera: {ex.Message}");
-                return false;
             }
         }
 
         /// <summary>
-        /// Try to initialize OVR camera access APIs
-        /// </summary>
-        private bool TryInitializeOVRCamera()
-        {
-            try
-            {
-                Debug.Log("[QuestNav] Attempting to initialize OVR camera access");
-
-                // Check if OVR camera features are available
-                if (OVRPlugin.GetSystemHeadsetType() == OVRPlugin.SystemHeadset.Meta_Quest_3)
-                {
-                    Debug.Log("[QuestNav] Quest 3 detected, checking camera capabilities");
-
-                    // Try to check if camera access is available through OVR
-                    // Note: This is experimental - OVR might not expose camera access to Unity apps
-                    bool cameraSupported = false;
-
-                    try
-                    {
-                        // Check if we can access camera through OVR APIs
-                        // This is a placeholder - actual OVR camera APIs might be different
-                        cameraSupported = OVRPlugin.GetNodePresent(OVRPlugin.Node.TrackerZero);
-                        Debug.Log($"[QuestNav] OVR camera support check: {cameraSupported}");
-                    }
-                    catch (Exception ex)
-                    {
-                        Debug.LogWarning($"[QuestNav] OVR camera support check failed: {ex.Message}");
-                    }
-
-                    if (cameraSupported)
-                    {
-                        // Create texture for OVR camera data
-                        captureTexture = new Texture2D(captureWidth, captureHeight, TextureFormat.RGB24, false);
-                        Debug.Log("[QuestNav] OVR camera access initialized");
-                        return true;
-                    }
-                }
-
-                Debug.LogWarning("[QuestNav] OVR camera access not available");
-                return false;
-            }
-            catch (Exception ex)
-            {
-                Debug.LogError($"[QuestNav] Error initializing OVR camera: {ex.Message}");
-                return false;
-            }
-        }
-
-        /// <summary>
-        /// Capture a frame using coroutine - supports both WebCam and VR camera modes
+        /// Capture a frame from Quest 3 passthrough camera
         /// </summary>
         private IEnumerator CaptureFrameCoroutine()
         {
-            if (!isStreaming)
+            if (!isStreaming || webCamTexture == null)
                 yield break;
 
             bool success = false;
             byte[] jpegData = null;
 
-            if (useWebCam && webCamTexture != null)
+            try
             {
-                // WebCam mode - capture from device camera
-                try
+                if (webCamTexture.isPlaying && webCamTexture.didUpdateThisFrame)
                 {
-                    if (webCamTexture.isPlaying && webCamTexture.didUpdateThisFrame)
+                    // Get pixels from WebCamTexture
+                    Color32[] pixels = webCamTexture.GetPixels32();
+
+                    // Create or resize capture texture if needed
+                    if (captureTexture.width != webCamTexture.width || captureTexture.height != webCamTexture.height)
                     {
-                        // Get pixels from WebCamTexture
-                        Color32[] pixels = webCamTexture.GetPixels32();
-
-                        // Create or resize capture texture if needed
-                        if (captureTexture.width != webCamTexture.width || captureTexture.height != webCamTexture.height)
-                        {
-                            DestroyImmediate(captureTexture);
-                            captureTexture = new Texture2D(webCamTexture.width, webCamTexture.height, TextureFormat.RGB24, false);
-                        }
-
-                        captureTexture.SetPixels32(pixels);
-                        captureTexture.Apply();
-
-                        success = true;
-                    }
-                }
-                catch (Exception ex)
-                {
-                    Debug.LogError($"[QuestNav] Error capturing WebCam frame: {ex.Message}");
-                }
-            }
-            else if (useOVRCamera)
-            {
-                // OVR camera mode - attempt to capture from OVR camera APIs
-                try
-                {
-                    // This is experimental - actual OVR camera capture would need proper APIs
-                    // For now, create a placeholder colored frame to test the pipeline
-                    Color32[] pixels = new Color32[captureWidth * captureHeight];
-                    Color32 testColor = new Color32(0, 255, 0, 255); // Green to indicate OVR mode
-
-                    for (int i = 0; i < pixels.Length; i++)
-                    {
-                        pixels[i] = testColor;
+                        DestroyImmediate(captureTexture);
+                        captureTexture = new Texture2D(webCamTexture.width, webCamTexture.height, TextureFormat.RGB24, false);
                     }
 
                     captureTexture.SetPixels32(pixels);
                     captureTexture.Apply();
 
                     success = true;
-                    Debug.Log("[QuestNav] OVR camera frame captured (placeholder)");
-                }
-                catch (Exception ex)
-                {
-                    Debug.LogError($"[QuestNav] Error capturing OVR camera frame: {ex.Message}");
                 }
             }
-            else
+            catch (Exception ex)
             {
-                // VR camera mode - capture from VR camera output
-                if (passthroughCamera == null || renderTexture == null)
-                    yield break;
-
-                // Wait for end of frame to ensure VR rendering is complete
-                yield return new WaitForEndOfFrame();
-
-                try
-                {
-                    // Store the original target texture
-                    RenderTexture originalTarget = passthroughCamera.targetTexture;
-
-                    // Temporarily set our render texture as the camera's target
-                    passthroughCamera.targetTexture = renderTexture;
-
-                    // Render the camera to our render texture
-                    passthroughCamera.Render();
-
-                    // Restore the original target texture
-                    passthroughCamera.targetTexture = originalTarget;
-
-                    // Read pixels from our render texture
-                    RenderTexture.active = renderTexture;
-                    captureTexture.ReadPixels(new Rect(0, 0, captureWidth, captureHeight), 0, 0);
-                    captureTexture.Apply();
-                    RenderTexture.active = null;
-
-                    success = true;
-                }
-                catch (Exception ex)
-                {
-                    Debug.LogError($"[QuestNav] Error capturing VR camera frame: {ex.Message}");
-                }
+                Debug.LogError($"[QuestNav] Error capturing passthrough camera frame: {ex.Message}");
             }
 
             if (success)
@@ -679,23 +513,18 @@ namespace QuestNav.Camera
         /// </summary>
         private void CleanupResources()
         {
-            if (renderTexture != null)
-            {
-                renderTexture.Release();
-                DestroyImmediate(renderTexture);
-                renderTexture = null;
-            }
-
             if (captureTexture != null)
             {
                 DestroyImmediate(captureTexture);
                 captureTexture = null;
             }
 
-            if (passthroughCamera != null)
+            if (webCamTexture != null)
             {
-                DestroyImmediate(passthroughCamera.gameObject);
-                passthroughCamera = null;
+                if (webCamTexture.isPlaying)
+                    webCamTexture.Stop();
+                DestroyImmediate(webCamTexture);
+                webCamTexture = null;
             }
         }
         #endregion
