@@ -145,6 +145,12 @@ namespace QuestNav.Core
         /// </summary>
         [SerializeField]
         private UIManager uiManager;
+
+        /// <summary>
+        /// Reference to the web interface component
+        /// </summary>
+        [SerializeField]
+        private Web.QuestNavWebInterface webInterface;
         #endregion
         #endregion
 
@@ -165,6 +171,17 @@ namespace QuestNav.Core
 
             // Initialize heartbeat manager
             heartbeatManager.Initialize(networkConnection);
+
+            // Initialize web interface if assigned
+            if (webInterface != null)
+            {
+                // Web interface is initialized in its own Start method
+                Debug.Log("[QuestNav] Web interface component found");
+            }
+            else
+            {
+                Debug.LogWarning("[QuestNav] No web interface component assigned");
+            }
 
             // Start connection to robot
             networkConnection.ConnectToRobot();

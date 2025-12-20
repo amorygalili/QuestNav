@@ -1,0 +1,32 @@
+body {
+  margin: 0;
+  padding: 0;
+  font-family: 'Roboto', Arial, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+#root {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.MuiPaper-root {
+  transition: box-shadow 0.3s ease-in-out;
+}
+
+.MuiPaper-root:hover {
+  box-shadow: 0 8px 16px rgba(0, 0, 0, 0.2);
+}
+
+.MuiButton-root {
+  text-transform: none;
+  font-weight: 500;
+}
+
+@media (max-width: 600px) {
+  .MuiContainer-root {
+    padding: 16px;
+  }
+}
