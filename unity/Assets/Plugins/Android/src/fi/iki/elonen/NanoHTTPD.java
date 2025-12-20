@@ -255,14 +255,19 @@ public abstract class NanoHTTPD {
             Map<String, String> params = new HashMap<>();
             if (method.equalsIgnoreCase("POST")) {
                 String contentType = headers.get("content-type");
-                if (contentType != null && contentType.toLowerCase().contains("application/x-www-form-urlencoded")) {
-                    int contentLength = Integer.parseInt(headers.getOrDefault("content-length", "0"));
-                    if (contentLength > 0) {
-                        char[] postData = new char[contentLength];
-                        int readLength = reader.read(postData);
-                        if (readLength > 0) {
-                            String postDataString = new String(postData, 0, readLength);
+                int contentLength = Integer.parseInt(headers.getOrDefault("content-length", "0"));
+
+                if (contentLength > 0) {
+                    char[] postData = new char[contentLength];
+                    int readLength = reader.read(postData);
+                    if (readLength > 0) {
+                        String postDataString = new String(postData, 0, readLength);
+
+                        if (contentType != null && contentType.toLowerCase().contains("application/x-www-form-urlencoded")) {
                             parseQueryString(postDataString, params);
+                        } else if (contentType != null && contentType.toLowerCase().contains("application/json")) {
+                            // For JSON, store the raw data in a special parameter
+                            params.put("postData", postDataString);
                         }
                     }
                 }

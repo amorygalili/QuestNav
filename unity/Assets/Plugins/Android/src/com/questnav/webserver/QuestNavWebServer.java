@@ -13,9 +13,6 @@ import java.util.Base64;
 import com.questnav.unity.UnityBridge;
 
 import fi.iki.elonen.NanoHTTPD;
-import fi.iki.elonen.NanoHTTPD.Response;
-import fi.iki.elonen.NanoHTTPD.IHTTPSession;
-import fi.iki.elonen.NanoHTTPD.ResponseException;
 
 /**
  * QuestNavWebServer - A simple web server for QuestNav that serves a web interface
@@ -98,6 +95,8 @@ public class QuestNavWebServer extends NanoHTTPD {
         return serveWebInterface(session);
     }
 
+
+
     /**
      * Handle API requests
      */
@@ -115,15 +114,31 @@ public class QuestNavWebServer extends NanoHTTPD {
                 return handleCameraFrame();
             } else if (uri.equals("/api/camera/settings")) {
                 return handleGetCameraSettings();
+            } else if (uri.equals("/api/camera/debug")) {
+                return handleCameraDebug();
             }
         }
 
         // Handle POST requests
         if (method.equalsIgnoreCase("POST")) {
             try {
-                Map<String, String> files = new HashMap<>();
-                session.parseBody(files);
-                String postData = files.get("postData");
+                String postData = null;
+
+                // Check Content-Type to determine how to parse the body
+                Map<String, String> headers = session.getHeaders();
+                String contentType = headers.get("content-type");
+
+                if (contentType != null && contentType.toLowerCase().contains("application/json")) {
+                    // For JSON content, get the data from parameters (set by NanoHTTPD)
+                    postData = session.getParameters().get("postData");
+                    System.out.println("[QuestNav] Received JSON POST data: " + postData);
+                } else {
+                    // For form data, use the existing parseBody method
+                    Map<String, String> files = new HashMap<>();
+                    session.parseBody(files);
+                    postData = files.get("postData");
+                    System.out.println("[QuestNav] Received form POST data: " + postData);
+                }
 
                 if (uri.equals("/api/team")) {
                     return handleTeamNumberUpdate(postData);
@@ -139,7 +154,7 @@ public class QuestNavWebServer extends NanoHTTPD {
                     return handleResetCameraStats();
                 }
             } catch (IOException | ResponseException e) {
-                System.err.println(TAG + ": Error parsing POST data: " + e.getMessage());
+                System.err.println("[QuestNav] Error parsing POST data: " + e.getMessage());
                 return new Response(Response.Status.INTERNAL_ERROR, "application/json",
                     "{\"error\": \"Failed to parse request\"}");
             }
@@ -361,15 +376,21 @@ public class QuestNavWebServer extends NanoHTTPD {
             // Get latest frame from Unity
             byte[] frameData = getLatestCameraFrame();
 
+            System.out.println("[QuestNav] Frame data: " +
+                (frameData != null ? frameData.length + " bytes" : "null"));
+
             if (frameData != null && frameData.length > 0) {
+                System.out.println("[QuestNav] Returning frame data as JPEG");
                 return new Response(Response.Status.OK, "image/jpeg",
                     new ByteArrayInputStream(frameData));
             } else {
+                System.out.println("[QuestNav] No frame data available - returning 204");
                 return new Response(Response.Status.NO_CONTENT, "application/json",
                     "{\"error\": \"No frame available\"}");
             }
         } catch (Exception e) {
             System.err.println("[QuestNav] Error getting camera frame: " + e.getMessage());
+            e.printStackTrace();
             return new Response(Response.Status.INTERNAL_ERROR, "application/json",
                 "{\"error\": \"Failed to get camera frame\"}");
         }
@@ -406,6 +427,43 @@ public class QuestNavWebServer extends NanoHTTPD {
             System.err.println("[QuestNav] Error stopping camera streaming: " + e.getMessage());
             return new Response(Response.Status.INTERNAL_ERROR, "application/json",
                 "{\"error\": \"Failed to stop camera streaming\"}");
+        }
+    }
+
+    /**
+     * Handle camera debug request
+     */
+    private Response handleCameraDebug() {
+        System.out.println("[QuestNav] Camera debug info requested");
+
+        try {
+            // Get latest frame from Unity
+            byte[] frameData = getLatestCameraFrame();
+
+            // Try to ping Unity for streaming status (fire-and-forget)
+            try {
+                UnityBridge.sendMessage("QuestNavWebInterface", "IsCameraStreaming", "");
+            } catch (Exception e) {
+                System.err.println("[QuestNav] Error checking streaming status: " + e.getMessage());
+            }
+
+            String debugInfo = String.format(
+                "{" +
+                "\"frameDataAvailable\": %s," +
+                "\"frameDataSize\": %d," +
+                "\"timestamp\": %d" +
+                "}",
+                frameData != null,
+                frameData != null ? frameData.length : 0,
+                System.currentTimeMillis()
+            );
+
+            System.out.println("[QuestNav] Debug info: " + debugInfo);
+            return new Response(Response.Status.OK, "application/json", debugInfo);
+        } catch (Exception e) {
+            System.err.println("[QuestNav] Error getting camera debug info: " + e.getMessage());
+            return new Response(Response.Status.INTERNAL_ERROR, "application/json",
+                "{\"error\": \"Failed to get camera debug info\"}");
         }
     }
 
@@ -509,6 +567,11 @@ public class QuestNavWebServer extends NanoHTTPD {
 
         synchronized (cameraFrameLock) {
             latestCameraFrame = frameData;
+            if (frameData != null && frameData.length > 0) {
+                System.out.println("[QuestNav] Successfully stored frame data");
+            } else {
+                System.out.println("[QuestNav] Warning: Received null or empty frame data");
+            }
         }
     }
 
